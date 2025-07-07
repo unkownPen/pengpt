@@ -9,7 +9,7 @@ app = Flask("")
 
 @app.route("/")
 def home():
-    return "PenGPT v2 DeepSeek-only alive & roasting 🖊️🔥"
+    return "PenGPT v2 DeepSeek-only online 🖊️🔥"
 
 def run():
     app.run(host="0.0.0.0", port=8080)
@@ -18,7 +18,7 @@ def keep_alive():
     Thread(target=run).start()
 
 # === HARDCODED KEYS ===
-TOKEN = "gapi_PmD6r4VWBv2OAXhzy++jl4BzI9mI0EVhNs0FY+Iv8uot2lwF0zZrpr/7BzFwkskY1WLbQQZL+ea+7OHltg83jw=="
+TOKEN = "gapi_9pKUqMhWh4rsL8faE8ZH2e1P9io2jjYS9nyo95nQjaACsTHAds+DGf+AKHZ6wtAUOH8/CmZ9Q8no1f87W8ePjA=="
 OPENROUTER_API_KEY = "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"
 
 client = guilded.Client()
@@ -70,7 +70,6 @@ async def on_message(msg):
         )
         return
 
-    # === Commands ===
     if lower == "/sv":
         saved_chats[uid] = deque(maxlen=50)
         await msg.reply("🫡 Saved chat ON.")
@@ -115,7 +114,7 @@ async def on_message(msg):
             saved_chats[uid].clear()
             await msg.reply("✅ Memory cleared.")
         else:
-            await msg.reply("Memory empty, just like your motivation 🍔💀")
+            await msg.reply("Saved memory clear, the only thing that's still full is your stomach buddy 🍔😎")
         return
 
     if lower == "/vsm":
@@ -143,7 +142,6 @@ async def on_message(msg):
         await msg.reply("♻️ Reset everything.")
         return
 
-    # === Chat handling ===
     if uid in saved_chats:
         if ping_mode[uid] and client.user.mention in content:
             prompt = content.replace(client.user.mention, "").strip()
@@ -176,7 +174,6 @@ async def on_message(msg):
             saved_chats[uid].append({"role": "assistant", "content": reply})
         await msg.reply(reply)
 
-# === STARTUP ===
+# Run it
 keep_alive()
 client.run(TOKEN)
-
