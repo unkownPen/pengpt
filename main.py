@@ -5,8 +5,8 @@ import json
 from datetime import datetime, timezone, timedelta
 
 # Guilded bot setup
-GUILDED_TOKEN = "gapi_uYs6KG6cuwRqNbLQE1P8JnYD02Jjm8P+ukCk9gQVB6oeAQQXWB7DTuhzoe3Xnaxo5Dcq1Ozu9OccmUWewwUrIw=="
-OPENROUTER_API_KEY = "gapi_6HEif3mU0xtPqIGZBsQOKuwCKJQjaWXXUcwp2M5O53lYn22IKB6n0MWzhV2oIG2cW4jEKBb7p/OTQnerPfSAeg=="
+GUILDED_TOKEN = "gapi_Zuv6vWRnxoG/CjhXMd9aFNqPzgSr8kvRdo8iYMWmMtqfo4DCcYXBf7MCa3ardylB8GJ9yotHqnoMolvOMaTOaw=="
+OPENROUTER_API_KEY = "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="
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Initialize Guilded client
