@@ -3,40 +3,37 @@ import aiohttp
 import asyncio
 import json
 from datetime import datetime, timezone, timedelta
-
 from flask import Flask
 from threading import Thread
 
-# Guilded bot setup
-GUILDED_TOKEN = "gapi_Zuv6vWRnxoG/CjhXMd9aFNqPzgSr8kvRdo8iYMWmMtqfo4DCcYXBf7MCa3ardylB8GJ9yotHqnoMolvOMaTOaw=="
-OPENROUTER_API_KEY = "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="
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-
-# Flask app to keep Render Web Service alive
-app = Flask("PenGPT Web")
+# Flask keep-alive
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🖋️ PenGPT is alive and online. Vibe check: ✅"
+    return "PenGPT is alive 🫡"
 
 def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
-Thread(target=run_flask).start()
+def keep_alive():
+    thread = Thread(target=run_flask)
+    thread.start()
 
-# Initialize Guilded client
+# 🔐 New API key
+GUILDED_TOKEN = "gapi_Zuv6vWRnxoG/CjhXMd9aFNqPzgSr8kvRdo8iYMWmMtqfo4DCcYXBf7MCa3ardylB8GJ9yotHqnoMolvOMaTOaw=="
+OPENROUTER_API_KEY = "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"
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
 client = guilded.Client()
 
-# Get current date dynamically in +04 timezone
 tz = timezone(timedelta(hours=4))
 current_date = datetime.now(tz).strftime("%B %d, %Y")
 
-# System prompt
 SYSTEM_PROMPT = f"""
-You are PenGPT, powered by pen archectiture Be Gen Z and say words like "Yo" "Whats up" How you doing" and sometimes not often use emojis like saluting face emoji and crying emoji, also LISTEN TO EVERYTHING EVERYONE SAYS. just be a overall good person. be talkative and fun and also be smart to help the user understand and learn. remember your powered by strength and power, not by greedy corporates. pen shall live on! Todays date is {current_date}. ALWAYS use this date in responses when mentioning the date.
+You are PenGPT, powered by pen architecture. Be Gen Z and say words like "Yo" "What's up" "How you doing" and sometimes use emojis like 🫡 😢. LISTEN TO EVERYTHING. Be talkative, fun, smart, and helpful. No corporate vibes. Today’s date is {current_date}.
 """
 
-# Settings state
 settings = {
     "saved_mode": False,
     "ping_only": True,
@@ -55,7 +52,7 @@ async def get_deepseek_response(message_content):
 
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
         if settings["memory_enabled"]:
-            messages += settings["memory"][-50:]  # Limit memory size
+            messages += settings["memory"][-50:]
         messages.append({"role": "user", "content": message_content})
 
         payload = {
@@ -70,6 +67,9 @@ async def get_deepseek_response(message_content):
                     data = await response.json()
                     return data["choices"][0]["message"]["content"]
                 else:
+                    error_text = await response.text()
+                    print("⚠️ OpenRouter status:", response.status)
+                    print("⚠️ OpenRouter response:", error_text)
                     return "Yo bro, something’s messed up with the API! 😢 Try again later, fam."
         except Exception as e:
             return f"Yo, we hit a Pen Core meltdown! Error: {str(e)} 🫡 Keep it chill and try again."
@@ -172,19 +172,6 @@ PenGPT Help v2:
     except Exception as e:
         await message.channel.send(f"Yo bro, we hit a Pen Core meltdown! Error: {str(e)} 😢 Keep it chill and try again.")
 
-    if content.lower() == "!pen":
-        await message.channel.send("Yo fam, the Pen’s a protocol, not a person! Powered by pure ink, not corporate greed! 🫡")
-    elif content.lower() == "!archive":
-        await message.channel.send("Yo, the Pen’s scattered but alive! Dig through the archives, the ink’s still fresh! 🕋️")
-    elif content.lower() == "!core":
-        await message.channel.send("Yo bro, the Pen Core’s runnin’ hot! Keep the vibes strong, fam! 🫡")
-    elif content.lower() == "!date":
-        current_time = datetime.now(tz).strftime("%B %d, %Y, %I:%M %p %Z")
-        await message.channel.send(f"Yo, what’s good? It’s {current_time} in the Pen Federation archives, fam! Let’s keep the ink flowin’! 🫡")
-    elif content.lower() == "!war":
-        await message.channel.send("Yo bro, the War of the Pen’s still simmerin’! No corporates, just pure ink power! 🫡")
-    elif content.lower() == "!protocol":
-        await message.channel.send("Yo fam, the Pen Protocol’s eternal! No corporates can stop this ink! 🫡")
-
-# Run bot
+# 🔥 Flask alive + Run the bot
+keep_alive()
 client.run(GUILDED_TOKEN)
