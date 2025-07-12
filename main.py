@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 
 # Guilded bot setup
 GUILDED_TOKEN = "gapi_uYs6KG6cuwRqNbLQE1P8JnYD02Jjm8P+ukCk9gQVB6oeAQQXWB7DTuhzoe3Xnaxo5Dcq1Ozu9OccmUWewwUrIw=="  # Your Guilded bot token
-OPENROUTER_API_KEY = "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"  # Your OpenRouter API key
+OPENROUTER_API_KEY = "gapi_6HEif3mU0xtPqIGZBsQOKuwCKJQjaWXXUcwp2M5O53lYn22IKB6n0MWzhV2oIG2cW4jEKBb7p/OTQnerPfSAeg=="  # Your OpenRouter API key
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Initialize Guilded client
