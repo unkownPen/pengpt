@@ -4,10 +4,25 @@ import asyncio
 import json
 from datetime import datetime, timezone, timedelta
 
+from flask import Flask
+from threading import Thread
+
 # Guilded bot setup
 GUILDED_TOKEN = "gapi_Zuv6vWRnxoG/CjhXMd9aFNqPzgSr8kvRdo8iYMWmMtqfo4DCcYXBf7MCa3ardylB8GJ9yotHqnoMolvOMaTOaw=="
 OPENROUTER_API_KEY = "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="
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Flask app to keep Render Web Service alive
+app = Flask("PenGPT Web")
+
+@app.route('/')
+def home():
+    return "🖋️ PenGPT is alive and online. Vibe check: ✅"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
+Thread(target=run_flask).start()
 
 # Initialize Guilded client
 client = guilded.Client()
