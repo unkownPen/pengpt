@@ -143,7 +143,9 @@ async def on_message(message):
         await message.reply("🔔 Ping enabled."); return
 
     elif lower == "/svpd":
-        client.saved_chats[user_id] = []
+        name = f"chat_{len(client.saved_sessions[user_id]) + 1}"
+        client.saved_sessions[user_id][name] = []
+        client.saved_chats[user_id] = client.saved_sessions[user_id][name]
         client.ping_enabled[user_id] = False
         await message.reply("💾 Saved chat started + 🔕 Ping disabled."); return
 
@@ -195,6 +197,15 @@ async def on_message(message):
         client.ping_enabled[user_id] = True
         client.models[user_id] = DEFAULT_MODEL
         await message.reply(ping + "♻️ All settings reset."); return
+
+    # Decide if we should reply at all
+    should_reply = (
+        lower.startswith("/") or
+        client.memory_mode[user_id] or
+        bool(client.saved_chats[user_id])
+    )
+    if not should_reply:
+        return
 
     # Generate AI reply
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
