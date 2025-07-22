@@ -13,7 +13,6 @@ if not OPENROUTER_API_KEY or not GUILDED_TOKEN:
 
 # PenGPT config
 DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
-MAX_SAVED_CHATS = 5
 MAX_MESSAGES_PER_CHAT = 50
 
 # Chat memory dict: user_id -> list of {role, content}
@@ -39,12 +38,10 @@ def add_message(user_id, role, content):
     saved_chats[user_id].append({"role": role, "content": content})
 
 def trim_chats():
-    # Keep max saved chats per user, trim each chat length
     for user_id in list(saved_chats.keys()):
         chat = saved_chats[user_id]
         if len(chat) > MAX_MESSAGES_PER_CHAT:
-            # Keep last N messages, plus system prompt at front
-            saved_chats[user_id] = [chat[0]] + chat[-(MAX_MESSAGES_PER_CHAT-1):]
+            saved_chats[user_id] = [chat[0]] + chat[-(MAX_MESSAGES_PER_CHAT - 1):]
 
 async def query_openrouter(messages):
     headers = {
@@ -65,7 +62,6 @@ async def query_openrouter(messages):
             return data["choices"][0]["message"]["content"]
 
 # ===== COMMANDS =====
-
 @bot.command()
 async def help(ctx):
     await ctx.send(
@@ -89,30 +85,34 @@ async def pen(ctx, *, prompt):
     await ctx.send(bot_reply)
 
 # ===== EVENT: Reply on mention =====
-
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    if bot.user.id in [m.id for m in message.mentions]:
+    bot_mention_str = "<@mjlxjn34>"  # Your bot's exact mention string on Guilded
+
+    if bot_mention_str in message.content:
         user_id = str(message.author.id)
-        # Remove mention text from message content for cleaner prompt
-        content_clean = message.content
-        for mention in message.mentions:
-            content_clean = content_clean.replace(f"<@{mention.id}>", "").strip()
-        add_message(user_id, "user", content_clean or message.content)
+        # Strip mention string from message for clean input
+        content_clean = message.content.replace(bot_mention_str, "").strip()
+        if not content_clean:
+            content_clean = "Yo"  # fallback if user just pings the bot
+
+        add_message(user_id, "user", content_clean)
+
         try:
             bot_reply = await query_openrouter(saved_chats[user_id])
         except Exception as e:
-            await message.channel.send(f"❌ Error: `{str(e)}`")
+            await message.channel.send(f"{message.author.mention} ❌ Error: `{str(e)}`")
             return
+
         add_message(user_id, "assistant", bot_reply)
         trim_chats()
-        await message.channel.send(bot_reply)
+        # Ping back the user for max rizz
+        await message.channel.send(f"{message.author.mention} {bot_reply}")
 
-    await bot.process_commands(message)  # Allow commands to still work
+    await bot.process_commands(message)  # Don't forget this!
 
 # ===== START THE BOT =====
-
 bot.run(GUILDED_TOKEN)
