@@ -79,24 +79,56 @@ async def fetch_openrouter_reply(model, history):
             except Exception as e:
                 raise Exception(f"Failed to fetch OpenRouter reply: {str(e)}")
 
-# You need to add on_message event handler for your bot to respond
+@client.event
+async def on_ready():
+    print(f"✅ Logged in as {client.user.name}")
+
 @client.event
 async def on_message(message):
-    if message.author.type.name == "bot":
+    if message.server is None or message.created_by.id == client.user.id:
         return
 
-    print(f"📥 Message from {message.author.name}: {message.content}")
-    
-    history = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": message.content}
-    ]
+    content = message.content.strip()
 
-    try:
-        response = await fetch_openrouter_reply(DEFAULT_MODEL, history)
-        await message.reply(response)
-    except Exception as e:
-        await message.reply(f"❌ Error: {str(e)}")
+    # Command handler
+    if content.startswith("/"):
+        if content == "/help":
+            await message.reply("""
+PenGPT Help:
+/sv - Start saved chat
+/svc - Close saved chat
+/pd - Ping off
+/pa - Ping on
+/svpd - Save+Ping Off
+/sm - Memory on
+/smo - Memory off
+/csm - Clear memory
+/vsm - View memory
+/csc - Clear saved chats
+/vsc - View saved chats
+/smpd - Memory + Ping off
+/de - Reset settings
+/model - Switch AI model
+/help - Show this help
+""")
+        else:
+            await message.reply("⚠️ Unknown command. Type /help for the list.")
+        return
+
+    if client.ping_enabled.get(message.server.id, True):
+        if f"@{client.user.name.lower()}" in content.lower():
+            user_id = message.created_by.id
+            model = client.models.get(user_id, DEFAULT_MODEL)
+            user_history = client.saved_chats.setdefault(user_id, [])
+            user_history.append({"role": "user", "content": content})
+            if len(user_history) > MAX_MESSAGES_PER_CHAT:
+                user_history = user_history[-MAX_MESSAGES_PER_CHAT:]
+            try:
+                reply = await fetch_openrouter_reply(model, [{"role": "system", "content": SYSTEM_PROMPT}] + user_history)
+                await message.reply(reply)
+                user_history.append({"role": "assistant", "content": reply})
+            except Exception as e:
+                await message.reply(f"❌ PenGPT Error: {e}")
 
 if __name__ == "__main__":
     async def run_all():
