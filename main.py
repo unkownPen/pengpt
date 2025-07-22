@@ -13,23 +13,29 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 client = guilded.Client()
 client.user_settings = {}
+client.saved_chats = {}
+client.memory_mode = {}
+client.ping_enabled = {}
+client.models = {}
+client.saved_sessions = {}
 
 MAX_SAVED_CHATS = 5
 MAX_MESSAGES_PER_CHAT = 50
+DEFAULT_MODEL = "openrouter/auto"
 
 # Timezone for Pen Federation
 tz = timezone(timedelta(hours=4))
 current_date = datetime.now(tz).strftime("%B %d, %Y")
 
 SYSTEM_PROMPT = f"""
-You are PenGPT, powered by pen archectiture. Be Gen Z and say words like "Yo", "What's up", "How you doing"
+You are PenGPT, powered by pen archectiture. Be Gen Z and say words like \"Yo\", \"What's up\", \"How you doing\"
 and sometimes use emojis like 🫡 or 😭. LISTEN TO EVERYTHING EVERYONE SAYS. Be talkative, fun, helpful, and anti-corporate.
 Pen shall live on! Today’s date is {current_date}.
 """
 
 # --- Web Server for Render ---
 async def handle_root(request):
-    return web.Response(text="PenGPT is online and inked up! 🫡")
+    return web.Response(text="PENGPT IS ALIVE")
 
 async def handle_help(request):
     return web.Response(text="""
@@ -45,207 +51,195 @@ PenGPT Help:
 /vsm - View memory
 /csc - Clear saved chats
 /vsc - View saved chats
+/smpd - Memory + Ping off
 /de - Reset settings
+/model - Switch AI model
+/help - Show this help
 """)
 
 def start_web_server():
-    app = web.Application()
-    app.router.add_get("/", handle_root)
-    app.router.add_get("/help", handle_help)
-    runner = web.AppRunner(app)
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(runner.setup())
-    site = web.TCPSite(runner, '0.0.0.0', int(os.getenv("PORT", 8080)))
-    loop.run_until_complete(site.start())
+    async def run():
+        app = web.Application()
+        app.router.add_get("/", handle_root)
+        app.router.add_get("/help", handle_help)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', int(os.getenv("PORT", 8080)))
+        await site.start()
+        print("✅ PENGPT IS ALIVE ON PORT", os.getenv("PORT", 8080))
 
-# --- AI Functions ---
-async def get_deepseek_response(message_content):
-    async with aiohttp.ClientSession() as session:
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "model": "tngtech/deepseek-r1t2-chimera:free",
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": message_content}
-            ],
-            "temperature": 1.0
-        }
-        try:
-            async with session.post(OPENROUTER_API_URL, headers=headers, json=payload) as response:
-                data = await response.json()
-                return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            return f"Error from Pen Core: {str(e)}"
+    asyncio.run(run())
 
-async def generate_chat_title(messages):
-    prompt = "Give a short and relevant name (max 6 words) for this conversation."
-    text_block = "\n".join(messages[-MAX_MESSAGES_PER_CHAT:])
-
-    payload = {
-        "model": "tngtech/deepseek-r1t2-chimera:free",
-        "messages": [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": text_block}
-        ],
-        "temperature": 0.5
-    }
-
+async def fetch_openrouter_reply(model, history):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_API_URL, headers=headers, json=payload) as response:
-                data = await response.json()
-                return data["choices"][0]["message"]["content"].strip().strip('"')
-    except:
-        return "Untitled Chat"
-
-# --- Events ---
-@client.event
-async def on_ready():
-    print(f"PenGPT ready as {client.user.name} 🫡")
+    payload = {
+        "model": model,
+        "messages": history,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(OPENROUTER_API_URL, headers=headers, json=payload) as resp:
+            result = await resp.json()
+            return result["choices"][0]["message"]["content"]
 
 @client.event
-async def on_message(msg):
-    if msg.author.bot:
+async def on_message(message):
+    if message.author.id == client.user.id:
         return
 
-    user_id = str(msg.author.id)
-    lower = msg.content.lower()
+    content = message.content.strip()
+    lower = content.lower()
+    user_id = str(message.author.id)
 
-    if user_id not in client.user_settings:
-        client.user_settings[user_id] = {
-            "saved_chat": False,
-            "ping": True,
-            "memory": False,
-            "memory_store": [],
-            "saved_chats": [],
-            "current_chat_name": None
-        }
+    # Init
+    if user_id not in client.saved_chats:
+        client.saved_chats[user_id] = []
+    if user_id not in client.memory_mode:
+        client.memory_mode[user_id] = False
+    if user_id not in client.ping_enabled:
+        client.ping_enabled[user_id] = True
+    if user_id not in client.models:
+        client.models[user_id] = DEFAULT_MODEL
+    if user_id not in client.saved_sessions:
+        client.saved_sessions[user_id] = {}
 
-    user_settings = client.user_settings[user_id]
+    ping = f"<@{user_id}> " if client.ping_enabled[user_id] else ""
 
+    # Handle reactions for loading saved chat
+    if message.reactions:
+        for reaction in message.reactions:
+            if reaction.emoji in ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']:
+                index = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'].index(reaction.emoji)
+                sessions = list(client.saved_sessions[user_id].items())
+                if index < len(sessions):
+                    session_name, session_data = sessions[index]
+                    client.saved_chats[user_id] = session_data
+                    await message.reply(f"🗂️ Loaded saved session: **{session_name}**")
+                return
+
+    # Commands
     if lower == "/help":
-        await msg.reply("""**PenGPT Help**\n`/sv`, `/svc`, `/pd`, `/pa`, `/svpd`, `/sm`, `/smo`, `/csm`, `/vsm`, `/vsc`, `/csc`, `/de`""")
-        return
-
-    elif lower == "/csc":
-        user_settings["saved_chats"] = []
-        await msg.reply("🗑️ All saved chats cleared.")
+        await message.reply(
+            ping +
+            "**PenGPT Help (DeepSeek-only)**\n"
+            "`/sv` - Saved chat mode\n"
+            "`/svc` - End saved chat\n"
+            "`/pd` - Ping off\n"
+            "`/pa` - Ping on\n"
+            "`/svpd` - Saved chat + ping off\n"
+            "`/sm` - Memory on\n"
+            "`/smo` - Memory off\n"
+            "`/csm` - Clear memory\n"
+            "`/vsm` - View memory\n"
+            "`/smpd` - Memory + ping off\n"
+            "`/de` - Reset settings\n"
+            "`/csc` - Clear saved chats\n"
+            "`/vsc` - View saved chats\n"
+            "`/model` - Change model (e.g. /model gpt-4)"
+        )
         return
 
     elif lower == "/sv":
-        if len(user_settings["saved_chats"]) >= MAX_SAVED_CHATS:
-            await msg.reply("❌ Max 5 saved chats. Use `/csc`.")
-        else:
-            user_settings["saved_chat"] = True
-            user_settings["memory_store"] = []
-            user_settings["current_chat_name"] = "Temporary Chat"
-            await msg.reply("✅ Saved chat mode started.")
-        return
+        name = f"chat_{len(client.saved_sessions[user_id]) + 1}"
+        client.saved_sessions[user_id][name] = []
+        client.saved_chats[user_id] = client.saved_sessions[user_id][name]
+        await message.reply(ping + f"💾 Saved chat started: **{name}**"); return
 
     elif lower == "/svc":
-        if user_settings["saved_chat"]:
-            user_settings["saved_chat"] = False
-            saved_data = user_settings["memory_store"][:]
-            title = await generate_chat_title(saved_data)
-            user_settings["saved_chats"].append({"name": title, "messages": saved_data})
-            user_settings["memory_store"] = []
-            await msg.reply(f"📂 Chat saved as **{title}**.")
+        client.saved_chats[user_id] = []
+        await message.reply(ping + "💾 Saved chat closed."); return
+
+    elif lower == "/sm":
+        client.memory_mode[user_id] = True
+        await message.reply(ping + "🧠 Memory ON."); return
+
+    elif lower == "/smo":
+        client.memory_mode[user_id] = False
+        await message.reply(ping + "🧠 Memory OFF."); return
+
+    elif lower == "/pd":
+        client.ping_enabled[user_id] = False
+        await message.reply("🔕 Ping disabled."); return
+
+    elif lower == "/pa":
+        client.ping_enabled[user_id] = True
+        await message.reply("🔔 Ping enabled."); return
+
+    elif lower == "/svpd":
+        client.saved_chats[user_id] = []
+        client.ping_enabled[user_id] = False
+        await message.reply("💾 Saved chat started + 🔕 Ping disabled."); return
+
+    elif lower == "/smpd":
+        client.memory_mode[user_id] = True
+        client.ping_enabled[user_id] = False
+        await message.reply("🧠 Memory ON + 🔕 Ping OFF."); return
+
+    elif lower == "/csm":
+        client.saved_chats[user_id] = []
+        await message.reply(ping + "🧹 Memory cleared."); return
+
+    elif lower == "/csc":
+        client.saved_sessions[user_id] = {}
+        await message.reply(ping + "🧼 All saved chats cleared."); return
+
+    elif lower == "/vsm":
+        mem = client.saved_chats[user_id]
+        if mem:
+            await message.reply(ping + "🧠 Memory:\n" + "\n".join(m["content"] for m in mem[-5:]))
         else:
-            await msg.reply("⚠️ No saved chat active.")
+            await message.reply(ping + "🧠 No memory found.")
         return
 
     elif lower == "/vsc":
-        saved_chats = user_settings["saved_chats"]
-        if not saved_chats:
-            await msg.reply("📭 No saved chats yet.")
+        sessions = client.saved_sessions[user_id]
+        if not sessions:
+            await message.reply("📁 No saved chats found.")
+            return
+        txt = "\n".join([f"{i+1}. {name}" for i, name in enumerate(sessions.keys())])
+        msg = await message.reply(f"📁 Saved Chats:\n{txt}\nReact 1️⃣-5️⃣ to load.")
+        for emoji in ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'][:len(sessions)]:
+            await msg.add_reaction(emoji)
+        return
+
+    elif lower.startswith("/model"):
+        parts = content.split(" ", 1)
+        if len(parts) == 2:
+            model = parts[1].strip()
+            client.models[user_id] = model
+            await message.reply(ping + f"🤖 Model set to `{model}`")
         else:
-            preview = "\n".join([f"{i+1}. **{c['name']}**" for i, c in enumerate(saved_chats[:5])])
-            sent = await msg.reply("**Saved Chats Menu**\nReact to load:\n" + preview)
-            emojis = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣"]
-            for i in range(len(saved_chats[:5])):
-                await sent.add_reaction(emojis[i])
-            if "reaction_menu" not in client.user_settings:
-                client.user_settings["reaction_menu"] = {}
-            client.user_settings["reaction_menu"][str(sent.id)] = {
-                "user_id": user_id,
-                "chats": saved_chats[:5]
-            }
-        return
-
-    elif lower == "/vsm":
-        mem = user_settings["memory_store"][-10:]
-        await msg.reply("\n".join(mem) if mem else "🫥 Memory is empty.")
-        return
-
-    elif lower == "/csm":
-        user_settings["memory_store"] = []
-        await msg.reply("🧼 Memory cleared.")
+            await message.reply(ping + f"📦 Current model: `{client.models[user_id]}`")
         return
 
     elif lower == "/de":
-        client.user_settings[user_id] = {
-            "saved_chat": False, "ping": True, "memory": False,
-            "memory_store": [], "saved_chats": [], "current_chat_name": None
-        }
-        await msg.reply("♻️ All settings reset.")
-        return
+        client.saved_chats[user_id] = []
+        client.memory_mode[user_id] = False
+        client.ping_enabled[user_id] = True
+        client.models[user_id] = DEFAULT_MODEL
+        await message.reply(ping + "♻️ All settings reset."); return
 
-    elif lower == "/pd": user_settings["ping"] = False; await msg.reply("🔕 Ping OFF."); return
-    elif lower == "/pa": user_settings["ping"] = True; await msg.reply("🔔 Ping ON."); return
-    elif lower == "/svpd": user_settings["saved_chat"] = True; user_settings["ping"] = False; await msg.reply("📦 Saved Chat + 🔕 Ping OFF."); return
-    elif lower == "/sm": user_settings["memory"] = True; await msg.reply("🧠 Memory ON."); return
-    elif lower == "/smo": user_settings["memory"] = False; await msg.reply("💤 Memory OFF."); return
-    elif lower == "/smpd": user_settings["memory"] = True; user_settings["ping"] = False; await msg.reply("🧠+🔕 Memory + Ping OFF."); return
-
-    is_mentioned = any(u.id == client.user.id for u in msg.mentions)
-    if is_mentioned or lower.startswith("!pengpt"):
-        content = msg.content.replace("!pengpt", "").strip()
-        if not content:
-            await msg.channel.send("Say something after !pengpt fam 😭")
-            return
-
-        if user_settings["memory"]:
-            user_settings["memory_store"].append(f"User: {content}")
-
-        response = await get_deepseek_response(content)
-
-        if user_settings["memory"]:
-            user_settings["memory_store"].append(f"AI: {response}")
-
-        await msg.channel.send(response)
-
-@client.event
-async def on_reaction_add(reaction, user):
-    if user.bot:
-        return
-
-    msg_id = str(reaction.message.id)
-    menu_data = client.user_settings.get("reaction_menu", {}).get(msg_id)
-    if not menu_data or str(user.id) != menu_data["user_id"]:
-        return
-
-    emoji_to_index = {"1️⃣": 0, "2️⃣": 1, "3️⃣": 2, "4️⃣": 3, "5️⃣": 4}
-    index = emoji_to_index.get(str(reaction.emoji))
-    if index is None:
-        return
+    # Generate AI reply
+    history = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if client.memory_mode[user_id] or client.saved_chats[user_id]:
+        history += client.saved_chats[user_id]
+    history.append({"role": "user", "content": content})
 
     try:
-        selected_chat = menu_data["chats"][index]
-        ai_msgs = [m for m in selected_chat["messages"] if m.startswith("AI:")]
-        if ai_msgs:
-            await reaction.message.channel.send(f"🧠 **{selected_chat['name']}**\n{ai_msgs[-1][3:].strip()}")
-        else:
-            await reaction.message.channel.send("🤷‍♂️ No AI replies in that chat.")
+        reply = await fetch_openrouter_reply(client.models[user_id], history)
     except Exception as e:
-        await reaction.message.channel.send(f"❌ Failed to load chat: {e}")
+        await message.reply(ping + f"❌ Error: {e}")
+        return
+
+    if client.memory_mode[user_id] or client.saved_chats[user_id] is not None:
+        client.saved_chats[user_id].append({"role": "user", "content": content})
+        client.saved_chats[user_id].append({"role": "assistant", "content": reply})
+        if len(client.saved_chats[user_id]) > MAX_MESSAGES_PER_CHAT:
+            client.saved_chats[user_id] = client.saved_chats[user_id][-MAX_MESSAGES_PER_CHAT:]
+
+    await message.reply(ping + reply)
 
 if __name__ == "__main__":
     start_web_server()
