@@ -79,8 +79,24 @@ async def fetch_openrouter_reply(model, history):
             except Exception as e:
                 raise Exception(f"Failed to fetch OpenRouter reply: {str(e)}")
 
-# Rest of the bot code remains unchanged...
-# (Your original on_message and on_reaction_add functions stay the same)
+# You need to add on_message event handler for your bot to respond
+@client.event
+async def on_message(message):
+    if message.author.type.name == "bot":
+        return
+
+    print(f"📥 Message from {message.author.name}: {message.content}")
+    
+    history = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": message.content}
+    ]
+
+    try:
+        response = await fetch_openrouter_reply(DEFAULT_MODEL, history)
+        await message.reply(response)
+    except Exception as e:
+        await message.reply(f"❌ Error: {str(e)}")
 
 if __name__ == "__main__":
     async def run_all():
