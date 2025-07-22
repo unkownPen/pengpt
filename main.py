@@ -18,7 +18,7 @@ MAX_MESSAGES_PER_CHAT = 50
 # Chat memory dict: user_id -> list of {role, content}
 saved_chats = {}
 
-# Timezone & system prompt with date flex
+# Timezone & system prompt flex
 tz = timezone(timedelta(hours=4))
 current_date = datetime.now(tz).strftime("%B %d, %Y")
 SYSTEM_PROMPT = f"""
@@ -30,6 +30,9 @@ Pen shall live on! Today’s date is {current_date}.
 # ===== BOT SETUP =====
 intents = guilded.Intents.all()
 bot = commands.Bot(command_prefix="/", intents=intents)
+
+# YOUR BOT’S GUILDED MENTION STRING (the ID you gave me)
+BOT_MENTION_STR = "<@mjlxjn34>"
 
 # ===== HELPERS =====
 def add_message(user_id, role, content):
@@ -62,9 +65,12 @@ async def query_openrouter(messages):
             return data["choices"][0]["message"]["content"]
 
 # ===== COMMANDS =====
+
 @bot.command()
 async def help(ctx):
+    ping = f"<@{ctx.author.id}> "
     await ctx.send(
+        ping +
         "🖊️ **PenGPT P2 Help Menu**\n"
         "`/pen <message>` — Ask anything\n"
         "`@PenGPT P2 <message>` — Mention bot directly\n"
@@ -78,41 +84,37 @@ async def pen(ctx, *, prompt):
     try:
         bot_reply = await query_openrouter(saved_chats[user_id])
     except Exception as e:
-        await ctx.send(f"❌ Error: `{str(e)}`")
+        await ctx.send(f"<@{ctx.author.id}> ❌ Error: `{str(e)}`")
         return
     add_message(user_id, "assistant", bot_reply)
     trim_chats()
-    await ctx.send(bot_reply)
+    await ctx.send(f"<@{ctx.author.id}> {bot_reply}")
 
 # ===== EVENT: Reply on mention =====
+
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    bot_mention_str = "<@mjlxjn34>"  # Your bot's exact mention string on Guilded
-
-    if bot_mention_str in message.content:
+    # Check if message contains the bot's mention string exactly
+    if BOT_MENTION_STR in message.content:
         user_id = str(message.author.id)
-        # Strip mention string from message for clean input
-        content_clean = message.content.replace(bot_mention_str, "").strip()
+        content_clean = message.content.replace(BOT_MENTION_STR, "").strip()
         if not content_clean:
-            content_clean = "Yo"  # fallback if user just pings the bot
+            content_clean = "Yo"  # fallback if only pinged with no text
 
         add_message(user_id, "user", content_clean)
-
         try:
             bot_reply = await query_openrouter(saved_chats[user_id])
         except Exception as e:
-            await message.channel.send(f"{message.author.mention} ❌ Error: `{str(e)}`")
+            await message.channel.send(f"<@{message.author.id}> ❌ Error: `{str(e)}`")
             return
-
         add_message(user_id, "assistant", bot_reply)
         trim_chats()
-        # Ping back the user for max rizz
-        await message.channel.send(f"{message.author.mention} {bot_reply}")
+        await message.channel.send(f"<@{message.author.id}> {bot_reply}")
 
-    await bot.process_commands(message)  # Don't forget this!
+    await bot.process_commands(message)  # Allow commands to still work
 
 # ===== START THE BOT =====
 bot.run(GUILDED_TOKEN)
