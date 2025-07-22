@@ -57,19 +57,6 @@ PenGPT Help:
 /help - Show this help
 """)
 
-def start_web_server():
-    async def run():
-        app = web.Application()
-        app.router.add_get("/", handle_root)
-        app.router.add_get("/help", handle_help)
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', int(os.getenv("PORT", 8080)))
-        await site.start()
-        print("✅ PENGPT IS ALIVE ON PORT", os.getenv("PORT", 8080))
-
-    asyncio.run(run())
-
 async def fetch_openrouter_reply(model, history):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
@@ -106,18 +93,6 @@ async def on_message(message):
         client.saved_sessions[user_id] = {}
 
     ping = f"<@{user_id}> " if client.ping_enabled[user_id] else ""
-
-    # Handle reactions for loading saved chat
-    if message.reactions:
-        for reaction in message.reactions:
-            if reaction.emoji in ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']:
-                index = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'].index(reaction.emoji)
-                sessions = list(client.saved_sessions[user_id].items())
-                if index < len(sessions):
-                    session_name, session_data = sessions[index]
-                    client.saved_chats[user_id] = session_data
-                    await message.reply(f"🗂️ Loaded saved session: **{session_name}**")
-                return
 
     # Commands
     if lower == "/help":
@@ -240,9 +215,21 @@ async def on_message(message):
             client.saved_chats[user_id] = client.saved_chats[user_id][-MAX_MESSAGES_PER_CHAT:]
 
     await message.reply(ping + reply)
+
+@client.event
+async def on_reaction_add(reaction):
+    user_id = str(reaction.user_id)
+    if user_id not in client.saved_sessions:
+        return
+    sessions = list(client.saved_sessions[user_id].items())
+    index = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'].index(reaction.emoji.name)
+    if index < len(sessions):
+        session_name, session_data = sessions[index]
+        client.saved_chats[user_id] = session_data
+        await reaction.message.reply(f"🗂️ Loaded saved session: **{session_name}**")
+
 if __name__ == "__main__":
     async def run_all():
-        # Start web server
         app = web.Application()
         app.router.add_get("/", handle_root)
         app.router.add_get("/help", handle_help)
@@ -251,8 +238,6 @@ if __name__ == "__main__":
         site = web.TCPSite(runner, '0.0.0.0', int(os.getenv("PORT", 8080)))
         await site.start()
         print("✅ PENGPT IS ALIVE ON PORT", os.getenv("PORT", 8080))
-
-        # Run Guilded bot
         await client.start(GUILDED_TOKEN)
 
     asyncio.run(run_all())
