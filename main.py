@@ -28,7 +28,8 @@ Pen shall live on! Today’s date is {current_date}.
 """
 
 # ===== BOT SETUP =====
-intents = guilded.Intents.all()
+intents = guilded.Intents.default()
+intents.message_content = True  # This is critical to read message content including mentions
 bot = commands.Bot(command_prefix="/", intents=intents)
 
 # ===== HELPERS =====
@@ -62,7 +63,6 @@ async def query_openrouter(messages):
             return data["choices"][0]["message"]["content"]
 
 # ===== COMMANDS =====
-
 @bot.command()
 async def help(ctx):
     ping = f"<@{ctx.author.id}> "
@@ -88,21 +88,20 @@ async def pen(ctx, *, prompt):
     await ctx.send(f"<@{ctx.author.id}> {bot_reply}")
 
 # ===== EVENT: Reply on mention =====
-
 @bot.event
 async def on_message(message):
     if message.author.bot:
         return
 
-    # ACTUAL MENTION CHECK: if bot's user ID is in the mentions list
-    if any(user.id == bot.user.id for user in message.mentions):
+    # Check if bot is mentioned using message.mentions (not raw text)
+    if bot.user in message.mentions:
         user_id = str(message.author.id)
-        # Clean the content by removing the bot mention(s)
+        # Clean message content by removing all mentions of the bot (if any)
         content_clean = message.content
-        for user in message.mentions:
-            if user.id == bot.user.id:
-                content_clean = content_clean.replace(f"<@{user.id}>", "").strip()
-
+        for mention in message.mentions:
+            if mention == bot.user:
+                # Remove mention text, Guilded mention format is like <@userid>
+                content_clean = content_clean.replace(f"<@{mention.id}>", "").strip()
         if not content_clean:
             content_clean = "Yo"  # fallback if only pinged with no text
 
@@ -116,7 +115,7 @@ async def on_message(message):
         trim_chats()
         await message.channel.send(f"<@{message.author.id}> {bot_reply}")
 
-    await bot.process_commands(message)  # Make sure commands still work
+    await bot.process_commands(message)  # Keep slash commands working
 
 # ===== START THE BOT =====
 bot.run(GUILDED_TOKEN)
