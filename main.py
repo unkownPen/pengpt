@@ -240,7 +240,19 @@ async def on_message(message):
             client.saved_chats[user_id] = client.saved_chats[user_id][-MAX_MESSAGES_PER_CHAT:]
 
     await message.reply(ping + reply)
-
 if __name__ == "__main__":
-    start_web_server()
-    client.run(GUILDED_TOKEN)
+    async def run_all():
+        # Start web server
+        app = web.Application()
+        app.router.add_get("/", handle_root)
+        app.router.add_get("/help", handle_help)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', int(os.getenv("PORT", 8080)))
+        await site.start()
+        print("✅ PENGPT IS ALIVE ON PORT", os.getenv("PORT", 8080))
+
+        # Run Guilded bot
+        await client.start(GUILDED_TOKEN)
+
+    asyncio.run(run_all())
