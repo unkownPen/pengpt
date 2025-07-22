@@ -5,11 +5,8 @@ import json
 from datetime import datetime, timezone, timedelta
 from aiohttp import web
 import guilded
-from dotenv import load_dotenv
 
-# Load .env (for local dev only)
-load_dotenv()
-
+# Tokens pulled from Render Secrets
 GUILDED_TOKEN = os.getenv("GUILDED_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
