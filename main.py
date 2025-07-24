@@ -1,6 +1,7 @@
 import os
 import aiohttp
 import guilded
+from guilded.ext import commands
 import asyncio
 import re
 from datetime import datetime, timezone, timedelta
@@ -23,7 +24,7 @@ now = datetime.now(timezone(timedelta(hours=4))).strftime("%B %d, %Y")
 SYSTEM_PROMPT = f"PenGPT P2… Today’s date is {now}."
 
 # ── GLOBALS ──
-client = guilded.Client()
+bot = commands.Bot(command_prefix="/")
 session: aiohttp.ClientSession = None  # Will be created in main()
 
 # ── WEB SERVER ──
@@ -65,12 +66,36 @@ async def query_openrouter(messages):
         print(f"❌ Exception in query_openrouter: {e}")
         return "There was a problem connecting to the model."
 
-# ── EVENT HANDLERS ──
-@client.event
-async def on_ready():
-    print("✅ Bot connected:", client.user.id)
+# ── COMMANDS ──
+@bot.command()
+async def help(ctx):
+    ping = f"<@{ctx.author.id}> "
+    await ctx.send(
+        ping +
+        "🖊️ **PenGPT P2 Help Menu**\n"
+        "`/pen <message>` — Ask anything\n"
+        "`@PenGPT P2 <message>` — Mention bot directly\n"
+        "Pen remembers chat context per user 🔥"
+    )
 
-@client.event
+@bot.command()
+async def pen(ctx, *, prompt=None):
+    if not prompt:
+        await ctx.send(f"<@{ctx.author.id}> ✏️ You gotta give me something after /pen")
+        return
+    user_id = str(ctx.author.id)
+    add_message(user_id, "user", prompt)
+    reply = await query_openrouter(saved_chats[user_id])
+    add_message(user_id, "assistant", reply)
+    trim(user_id)
+    await ctx.send(f"<@{ctx.author.id}> {reply}")
+
+# ── EVENTS ──
+@bot.event
+async def on_ready():
+    print("✅ Bot connected:", bot.user.id)
+
+@bot.event
 async def on_message(message):
     if message.author.bot:
         return
@@ -78,17 +103,10 @@ async def on_message(message):
     text = message.content.strip()
     uid = str(message.author.id)
 
-    # DEBUG prints for mention inspection
-    print("DEBUG: Message content:", text)
-    print("DEBUG: Mentions:", [(u.id, u.name) for u in message.mentions])
-
-    # Regex mention pattern for bot (accounts for optional username part)
-    bot_id_str = str(client.user.id)
+    # Mention detection
+    bot_id_str = str(bot.user.id)
     mention_pattern = re.compile(rf"<@{bot_id_str}(:[a-zA-Z0-9_]+)?>")
-
-    # Check mention either via mentions or regex match in text
-    if mention_pattern.search(text) or any(u.id == client.user.id for u in message.mentions):
-        # Remove all mention variants
+    if mention_pattern.search(text) or any(u.id == bot.user.id for u in message.mentions):
         clean = mention_pattern.sub("", text).strip() or "Yo"
         add_message(uid, "user", clean)
         reply = await query_openrouter(saved_chats[uid])
@@ -97,21 +115,8 @@ async def on_message(message):
         await message.channel.send(f"<@{uid}> {reply}")
         return
 
-    # /pen command
-    if text.startswith("/pen"):
-        prompt = text[4:].strip()
-        if prompt:
-            add_message(uid, "user", prompt)
-            reply = await query_openrouter(saved_chats[uid])
-            add_message(uid, "assistant", reply)
-            trim(uid)
-            await message.channel.send(f"<@{uid}> {reply}")
-        else:
-            await message.channel.send("✏️ You gotta give me something after /pen")
-        return
-
-    # Let commands process (if any added later)
-    await client.process_commands(message)
+    # Process commands (so /help and /pen actually work)
+    await bot.process_commands(message)
 
 # ── MAIN ──
 async def main():
@@ -120,7 +125,7 @@ async def main():
 
     try:
         await start_web()
-        await client.start(GUILDED_TOKEN)
+        await bot.start(GUILDED_TOKEN)
     finally:
         await session.close()
 
