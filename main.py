@@ -1,120 +1,84 @@
 import os
+import asyncio
 import aiohttp
-import guilded
-from guilded.ext import commands
+import json
 from datetime import datetime, timezone, timedelta
+from aiohttp import web
+import guilded
 
-# ===== CONFIG =====
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# Tokens pulled from Render Secrets
 GUILDED_TOKEN = os.getenv("GUILDED_TOKEN")
-if not OPENROUTER_API_KEY or not GUILDED_TOKEN:
-    print("❌ Missing OPENROUTER_API_KEY or GUILDED_TOKEN in env vars! Exiting...")
-    exit(1)
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# PenGPT config
-DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
+# Constants
+MAX_SAVED_CHATS = 5
 MAX_MESSAGES_PER_CHAT = 50
+DEFAULT_MODEL = "tngtech/deepseek-r1t2-chimera:free"
+BOT_USER_ID = "mjlxjn34"
 
-# Chat memory dict: user_id -> list of {role, content}
 saved_chats = {}
 
-# Timezone & system prompt flex
-tz = timezone(timedelta(hours=4))
-current_date = datetime.now(tz).strftime("%B %d, %Y")
-SYSTEM_PROMPT = f"""
-You are PenGPT P2, powered by pen architecture. Be Gen Z and say words like "Yo", "What's up", "How you doing"
-and sometimes use emojis like 🫡 or 😭. LISTEN TO EVERYTHING EVERYONE SAYS. Be talkative, fun, helpful, and anti-corporate.
-Pen shall live on! Today’s date is {current_date}.
-"""
+# --- Chat Handling Functions ---
+def add_message(chat_id, role, content):
+    if chat_id not in saved_chats:
+        saved_chats[chat_id] = []
+    saved_chats[chat_id].append({"role": role, "content": content})
 
-# ===== BOT SETUP =====
-bot = commands.Bot(command_prefix="/")
-
-# ===== HELPERS =====
-def add_message(user_id, role, content):
-    if user_id not in saved_chats:
-        saved_chats[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    saved_chats[user_id].append({"role": role, "content": content})
+    # Keep only the most recent messages
+    if len(saved_chats[chat_id]) > MAX_MESSAGES_PER_CHAT:
+        saved_chats[chat_id] = saved_chats[chat_id][-MAX_MESSAGES_PER_CHAT:]
 
 def trim_chats():
-    for user_id in list(saved_chats.keys()):
-        chat = saved_chats[user_id]
-        if len(chat) > MAX_MESSAGES_PER_CHAT:
-            saved_chats[user_id] = [chat[0]] + chat[-(MAX_MESSAGES_PER_CHAT - 1):]
+    if len(saved_chats) > MAX_SAVED_CHATS:
+        oldest_chat = min(saved_chats.items(), key=lambda x: len(x[1]))[0]
+        del saved_chats[oldest_chat]
 
+# --- OpenRouter Query ---
 async def query_openrouter(messages):
+    url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "X-Title": "PenGPT P2"
+        "HTTP-Referer": "https://yourapp.com"
     }
     payload = {
         "model": DEFAULT_MODEL,
         "messages": messages
     }
     async with aiohttp.ClientSession() as session:
-        async with session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload) as resp:
-            if resp.status != 200:
-                text = await resp.text()
-                raise Exception(f"OpenRouter Error {resp.status}: {text}")
-            data = await resp.json()
-            return data["choices"][0]["message"]["content"]
+        async with session.post(url, headers=headers, json=payload) as resp:
+            result = await resp.json()
+            return result['choices'][0]['message']['content']
 
-# ===== COMMANDS =====
-@bot.command()
-async def help(ctx):
-    ping = f"<@{ctx.author.id}> "
-    await ctx.send(
-        ping +
-        "🖊️ **PenGPT P2 Help Menu**\n"
-        "`/pen <message>` — Ask anything\n"
-        "`@PenGPT P2 <message>` — Mention bot directly\n"
-        "Pen remembers chat context per user 🔥"
-    )
+# --- Guilded Bot Setup ---
+bot = guilded.Client()
 
-@bot.command()
-async def pen(ctx, *, prompt):
-    user_id = str(ctx.author.id)
-    add_message(user_id, "user", prompt)
-    try:
-        bot_reply = await query_openrouter(saved_chats[user_id])
-    except Exception as e:
-        await ctx.send(f"<@{ctx.author.id}> ❌ Error: `{str(e)}`")
-        return
-    add_message(user_id, "assistant", bot_reply)
-    trim_chats()
-    await ctx.send(f"<@{ctx.author.id}> {bot_reply}")
+@bot.event
+async def on_ready():
+    print(f"PenGPT P2 is online as {bot.user.name}")
 
-# ===== EVENT: Reply on mention =====
 @bot.event
 async def on_message(message):
-    if message.author.bot:
+    if message.author.id == BOT_USER_ID:
         return
 
-    # Check if bot is mentioned by user id in message.mentions list
-    if any(user.id == bot.user.id for user in message.mentions):
-        user_id = str(message.author.id)
-        # Remove all mentions of bot from the content for clean prompt
-        content_clean = message.content
-        for mention in message.mentions:
-            if mention.id == bot.user.id:
-                # Mentions look like <@user_id> in Guilded messages
-                content_clean = content_clean.replace(f"<@{mention.id}>", "").strip()
+    # /help command
+    if message.content.lower() == "/help":
+        await message.channel.send("Yo! I'm PenGPT P2 🤖\nUse /help, or tag me like @PenGPT P2 and ask anything!")
+        return
 
-        if not content_clean:
-            content_clean = "Yo"  # fallback if only pinged with no text
+    # If the bot is mentioned directly (Guilded-style)
+    if f"<@{BOT_USER_ID}>" in message.content or "@PenGPT P2" in message.content:
+        chat_id = f"user-{message.author.id}"
+        user_input = message.content
 
-        add_message(user_id, "user", content_clean)
+        add_message(chat_id, "user", user_input)
         try:
-            bot_reply = await query_openrouter(saved_chats[user_id])
+            response = await query_openrouter(saved_chats[chat_id])
         except Exception as e:
-            await message.channel.send(f"<@{message.author.id}> ❌ Error: `{str(e)}`")
-            return
-        add_message(user_id, "assistant", bot_reply)
-        trim_chats()
-        await message.channel.send(f"<@{message.author.id}> {bot_reply}")
+            await message.channel.send(f"❌ Error talking to OpenRouter: `{e}`")
+        else:
+            add_message(chat_id, "assistant", response)
+            await message.channel.send(response)
 
-    await bot.process_commands(message)  # So slash commands still work
-
-# ===== START THE BOT =====
 bot.run(GUILDED_TOKEN)
