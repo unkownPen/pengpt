@@ -19,7 +19,15 @@ MAX_MESSAGES = 50
 saved_chats = {}
 
 now = datetime.now(timezone(timedelta(hours=4))).strftime("%B %d, %Y")
-SYSTEM_PROMPT = f"PenGPT P2… Today’s date is {now}."
+SYSTEM_PROMPT = f"""
+You are PenGPT P2, powered by pen architecture. Be Gen Z and say words like "Yo", "What's up", "How you doing"
+and sometimes use emojis like 🫡 or 😭. LISTEN TO EVERYTHING EVERYONE SAYS. Be talkative, fun, helpful, and anti-corporate.
+Pen shall live on! Today’s date is {now}.
+"""
+
+# ── GLOBALS ──
+client = guilded.Client()
+session: aiohttp.ClientSession = None  # will init in main()
 
 # ── WEB SERVER ──
 async def handle(_):
@@ -30,15 +38,14 @@ async def start_web():
     app.router.add_get("/", handle)
     runner = web.AppRunner(app)
     await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', PORT).start()
-    print(f"Web server on {PORT}")
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    print(f"🌐 Web server running on port {PORT}")
 
-# ── BOT CLIENT ──
-client = guilded.Client()
-
-def add_message(uid, role, txt):
+# ── CHAT HELPERS ──
+def add_message(uid, role, content):
     saved_chats.setdefault(uid, [{"role": "system", "content": SYSTEM_PROMPT}])
-    saved_chats[uid].append({"role": role, "content": txt})
+    saved_chats[uid].append({"role": role, "content": content})
 
 def trim(uid):
     history = saved_chats.get(uid, [])
@@ -46,18 +53,27 @@ def trim(uid):
         saved_chats[uid] = [history[0]] + history[-(MAX_MESSAGES - 1):]
 
 async def query_openrouter(messages):
-    res = await aiohttp.ClientSession().post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}"},
-        json={"model": DEFAULT_MODEL, "messages": messages}
-    )
-    data = await res.json()
-    return data["choices"][0]["message"]["content"]
+    try:
+        async with session.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json", "X-Title": "PenGPT P2"},
+            json={"model": DEFAULT_MODEL, "messages": messages}
+        ) as res:
+            if res.status != 200:
+                print(f"❌ OpenRouter error: {res.status}")
+                text = await res.text()
+                print(f"Details: {text}")
+                return "Sorry, the Pen Core is overheating! Try again later."
+            data = await res.json()
+            return data["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"❌ Exception in query_openrouter: {e}")
+        return "PenGPT hit a meltdown! Try again later."
 
-# ── EVENT HANDLERS ──
+# ── EVENTS ──
 @client.event
 async def on_ready():
-    print("Bot connected:", client.user.id)
+    print(f"✅ PenGPT Bot connected as {client.user.id}")
 
 @client.event
 async def on_message(message):
@@ -67,7 +83,7 @@ async def on_message(message):
     text = message.content.strip()
     uid = str(message.author.id)
 
-    # /pen command
+    # /pen command handler
     if text.startswith("/pen"):
         prompt = text[4:].strip()
         if prompt:
@@ -77,12 +93,16 @@ async def on_message(message):
             trim(uid)
             await message.reply(f"<@{uid}> {reply}")
         else:
-            await message.reply("✏️ You gotta give me something after /pen")
+            await message.reply("✏️ Yo, you gotta say something after /pen!")
         return
 
-    # Mention detection
+    # Mention handler (fixed)
     if client.user in message.mentions:
-        clean = text.replace(f"<@{client.user.id}>", "").strip() or "Yo"
+        clean = message.content
+        for mention in message.mentions:
+            if mention.id == client.user.id:
+                clean = clean.replace(f"<@{mention.id}>", "")
+        clean = clean.strip() or "Yo"
         add_message(uid, "user", clean)
         reply = await query_openrouter(saved_chats[uid])
         add_message(uid, "assistant", reply)
@@ -92,8 +112,14 @@ async def on_message(message):
 
 # ── MAIN ──
 async def main():
-    await start_web()
-    await client.start(GUILDED_TOKEN)
+    global session
+    session = aiohttp.ClientSession()
+    try:
+        await start_web()
+        await client.start(GUILDED_TOKEN)
+    finally:
+        await session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
+
