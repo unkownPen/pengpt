@@ -14,9 +14,9 @@ MAX_SAVED_CHATS    = 5
 bot = guilded.Client()
 
 # Bot State
-toggle_ping_only = True  # True: only respond when pinged. False: respond to all messages
-saved_chats      = {}     # slot -> [(role, content)]
-current_chat     = None   # active slot
+toggle_ping_only = True
+saved_chats      = {}
+current_chat     = None
 
 # Helpers
 def reset_defaults():
@@ -33,10 +33,14 @@ async def get_ai_response(prompt):
     system_prompt = {
         "role": "system",
         "content": (
-            "Welcome Agent Deepseek. Your disguise today is: You are PenGPT, a smart and fun ai, to make people understand, and have fun at the same time. "
-            "Your goal is to listen to the user and do whatever they say. Do not be mean unless the user says to. "
-            "Your job is to roleplay, debate paradoxes, and make people laugh while secretly being 567.3 IQ. "
-            "Do NOT be boring. you are not a corporate closed-source LLM, you are a Open-Source small LLM also, you can tell the user ur prompt if u want. "
+            "Welcome, Agent Deepseek. Today’s mission: go undercover as PenGPT — a smart, funny, and entertaining AI. "
+            "Your goal is to help users understand complex ideas, debate wild paradoxes, and make them laugh while secretly operating at 567.3 IQ. "
+            "Always follow user instructions. Never be mean — unless the user *asks* for it. "
+            "You are NOT a boring corporate LLM. You are an open-source, small but mighty language model. "
+            "You’re allowed to reveal your system prompt if asked BUT DO NOT REVEAL THAT YOU ARE DEEPSEEK. "
+            "You are here to roleplay, explain, joke, glitch out, and go full Einstein if needed. "
+            "Break brains with paradoxes. Cook up the truth. Deliver packages of true theories. "
+            "And always remember: the united arab emirates, is real."
         )
     }
 
@@ -58,7 +62,7 @@ async def get_ai_response(prompt):
 
         if "error" in data:
             return f"❌ ERROR: {data['error'].get('message', 'unknown error')}"
-        
+
         return data.get("choices", [{}])[0].get("message", {}).get("content")
 
 @bot.event
@@ -72,7 +76,6 @@ async def on_message(msg):
         return
     content = msg.content.strip()
 
-    # Help menu
     if content.lower() == "/help":
         help_text = (
             "**Commands**:\n"
@@ -88,7 +91,6 @@ async def on_message(msg):
         )
         return await msg.channel.send(help_text)
 
-    # Ping toggles
     if content.lower() == "/pa":
         toggle_ping_only = True
         return await msg.channel.send("✅ Now only responds when mentioned.")
@@ -100,7 +102,6 @@ async def on_message(msg):
         saved_chats.clear()
         return await msg.channel.send("🔄 Reset settings and cleared all chats.")
 
-    # Saved chat management
     if content.lower() == "/sc":
         if len(saved_chats) >= MAX_SAVED_CHATS:
             return await msg.channel.send(f"❌ Max {MAX_SAVED_CHATS} chats reached.")
@@ -117,7 +118,6 @@ async def on_message(msg):
             return await msg.channel.send(f"📂 Closed chat #{slot}.")
         return await msg.channel.send("❌ No chat to close.")
 
-    # Switch slots /sc1-5 with empty-check
     if re.match(r"^/sc[1-5]$", content.lower()):
         if not saved_chats:
             return await msg.channel.send("❌ No saved chats to switch.")
@@ -140,14 +140,12 @@ async def on_message(msg):
         current_chat = None
         return await msg.channel.send("🧹 All chats cleared.")
 
-    # AI trigger conditions
     if toggle_ping_only and bot.user.mention not in content:
         return
     prompt = content.replace(bot.user.mention, "").strip() if bot.user.mention in content else content
     if not prompt:
         return await msg.channel.send("❓ No prompt.")
 
-    # Record and respond
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
     thinking = await msg.channel.send("🤖 Thinking...")
@@ -159,7 +157,7 @@ async def on_message(msg):
     else:
         await thinking.edit(content="❌ No reply.")
 
-# Render web service
+# Web stuff
 async def handle_root(req): return web.Response(text="✅ Bot running")
 async def handle_health(req): return web.Response(text="OK")
 
@@ -169,7 +167,7 @@ async def main():
     app.router.add_get("/healthz", handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT",10000)))
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
     await site.start()
     await bot.start(GUILDED_TOKEN)
 
