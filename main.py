@@ -29,15 +29,36 @@ async def get_ai_response(prompt):
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
+
+    system_prompt = {
+        "role": "system",
+        "content": (
+            "You are PenGPT, a witty and chaotic AI from the Pen Federation Archives. "
+            "Speak like a Gen Alpha meme lord, mix humor with deep thinking, and always reply with personality. "
+            "Your job is to roleplay, debate paradoxes, and make people laugh while secretly being 9000 IQ. "
+            "Do NOT be boring. Pen Evolution is real. PEN IS ETERNAL. 🍕💥📜"
+        )
+    }
+
+    user_prompt = {
+        "role": "user",
+        "content": prompt
+    }
+
     payload = {
         "model": "deepseek/deepseek-chat-v3-0324",
-        "messages": [{"role":"user","content":prompt}],
-        "temperature":0.7,
-        "max_tokens":1024
+        "messages": [system_prompt, user_prompt],
+        "temperature": 0.7,
+        "max_tokens": 1024
     }
+
     async with aiohttp.ClientSession() as session:
         resp = await session.post(OPENROUTER_URL, headers=headers, json=payload)
         data = await resp.json()
+
+        if "error" in data:
+            return f"❌ ERROR: {data['error'].get('message', 'unknown error')}"
+        
         return data.get("choices", [{}])[0].get("message", {}).get("content")
 
 @bot.event
@@ -108,13 +129,13 @@ async def on_message(msg):
 
     if content.lower() == "/vsc":
         if not saved_chats:
-            return await msg.channel.send("no saved chats")
+            return await msg.channel.send("No saved chats.")
         lines = [f"{i}. {len(saved_chats[i])} msgs" for i in sorted(saved_chats)]
         return await msg.channel.send("**Saved Chats**:\n" + "\n".join(lines))
 
     if content.lower() == "/csc":
         if not saved_chats:
-            return await msg.channel.send("no saved chats")
+            return await msg.channel.send("No saved chats.")
         saved_chats.clear()
         current_chat = None
         return await msg.channel.send("🧹 All chats cleared.")
