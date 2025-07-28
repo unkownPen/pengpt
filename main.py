@@ -15,7 +15,6 @@ bot = guilded.Client()
 ping_mode     = True
 saved_chats   = {}        # slot (1–5) -> list of (role, content)
 current_chat  = None       # slot number
-recording     = True       # always record since esc removed
 
 # Helpers
 def reset_defaults():
@@ -54,26 +53,31 @@ async def on_message(message):
 
     content = message.content.strip()
 
-    # Slash commands
+    # Help command
     if content.lower() == "/help":
-        return await message.channel.send(
-            "**Commands:**\n"
-            "`/help` `/pa` `/pd` `/de`\n"
-            "`/sc` `/sco`\n"
-            "`/vsc` `/csc`\n"
+        help_text = (
+            "**Bot Commands**\n"
+            "`/help`  - Show this help message.\n"
+            "`/pa`    - Activate ping mode (respond to mentions).\n"
+            "`/pd`    - Deactivate ping mode (ignore mentions).\n"
+            "`/de`    - Reset settings to default.\n"
+            "`/sc`    - Start a new saved chat (up to 5).\n"
+            "`/sco`   - Close the current saved chat.\n"
+            "`/vsc`   - View saved chats and react to open.\n"
+            "`/csc`   - Clear all saved chats."
         )
+        return await message.channel.send(help_text)
 
+    # Ping mode commands
     if content.lower() == "/pa":
         ping_mode = True
         return await message.channel.send("✅ Ping mode ON")
-
     if content.lower() == "/pd":
         ping_mode = False
         return await message.channel.send("❌ Ping mode OFF")
-
     if content.lower() == "/de":
         reset_defaults()
-        return await message.channel.send("🔄 Reset to defaults (ping ON)")
+        return await message.channel.send("🔄 Settings reset to default.")
 
     # Saved chat commands
     if content.lower() == "/sc":
@@ -84,7 +88,7 @@ async def on_message(message):
                 saved_chats[i] = []
                 current_chat = i
                 return await message.channel.send(f"💾 Started saved chat #{i}.")
-    
+
     if content.lower() == "/sco":
         if current_chat and current_chat in saved_chats:
             slot = current_chat
@@ -96,7 +100,7 @@ async def on_message(message):
         if not saved_chats:
             return await message.channel.send("no saved chats")
         text = "**Saved chats:**\n" + "\n".join(
-            f"{i}. {len(saved_chats[i])} messages" for i in saved_chats
+            f"{i}. {len(saved_chats[i])} msgs" for i in saved_chats
         )
         vmsg = await message.channel.send(text)
         for i in saved_chats:
@@ -116,7 +120,7 @@ async def on_message(message):
 
     prompt = content.replace(bot.user.mention, "").strip()
     if not prompt:
-        return await message.channel.send("❓ You pinged but no prompt.")
+        return await message.channel.send("❓ You pinged but no prompt provided.")
 
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
@@ -142,7 +146,7 @@ async def on_reaction_add(reaction, user):
         if slot in saved_chats:
             last_ai = next((c for r, c in reversed(saved_chats[slot]) if r=="assistant"), None)
             if last_ai:
-                await msg.edit(content=f"💬 Chat #{slot} last AI message:\n{last_ai}")
+                await msg.edit(content=f"💬 Chat #{slot} last AI reply:\n{last_ai}")
 
 # Web service for Render
 async def handle_root(request): return web.Response(text="✅ Bot running")
