@@ -68,8 +68,14 @@ async def fetch_openrouter_reply(model, history):
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(OPENROUTER_API_URL, headers=headers, json=payload) as resp:
-            result = await resp.json()
-            return result["choices"][0]["message"]["content"]
+            try:
+                result = await resp.json()
+                if "choices" not in result:
+                    raise ValueError(f"Invalid API response: {json.dumps(result, indent=2)}")
+                return result["choices"][0]["message"]["content"]
+            except aiohttp.ContentTypeError:
+                text = await resp.text()
+                raise ValueError(f"API did not return JSON. Raw response: {text}")
 
 @client.event
 async def on_message(message):
@@ -94,16 +100,9 @@ async def on_message(message):
 
     ping = f"<@{user_id}> " if client.ping_enabled[user_id] else ""
 
-    # Check for bot mention (manual mention check)
+    # Check for bot mention
     is_mentioned = f"<@{client.user.id}>" in content
-
-    # Force reply if mentioned
-    should_reply = (
-        lower.startswith("/") or
-        is_mentioned or
-        client.memory_mode[user_id] or
-        bool(client.saved_chats[user_id])
-    )
+    should_reply = lower.startswith("/") or is_mentioned or client.memory_mode[user_id] or bool(client.saved_chats[user_id])
     if not should_reply:
         return
 
@@ -112,26 +111,23 @@ async def on_message(message):
         await message.reply(
             ping +
             "**PenGPT Help (DeepSeek-only)**\n"
-            "`/sv` - Saved chat mode\n"
-            "`/svc` - End saved chat\n"
-            "`/pd` - Ping off\n"
-            "`/pa` - Ping on\n"
-            "`/svpd` - Saved chat + ping off\n"
-            "`/sm` - Memory on\n"
-            "`/smo` - Memory off\n"
-            "`/csm` - Clear memory\n"
-            "`/vsm` - View memory\n"
-            "`/smpd` - Memory + ping off\n"
-            "`/de` - Reset settings\n"
-            "`/csc` - Clear saved chats\n"
-            "`/vsc` - View saved chats\n"
-            "`/model` - Change model (e.g. /model gpt-4)"
+            "/sv - Saved chat mode\n"
+            "/svc - End saved chat\n"
+            "/pd - Ping off\n"
+            "/pa - Ping on\n"
+            "/svpd - Saved chat + ping off\n"
+            "/sm - Memory on\n"
+            "/smo - Memory off\n"
+            "/csm - Clear memory\n"
+            "/vsm - View memory\n"
+            "/smpd - Memory + ping off\n"
+            "/de - Reset settings\n"
+            "/csc - Clear saved chats\n"
+            "/vsc - View saved chats\n"
+            "/model - Change model (e.g. /model gpt-4)"
         )
         return
 
-    # [All other commands stay the same... truncated for brevity. You already pasted them above.]
-
-    # History + Completion
     history = [{"role": "system", "content": SYSTEM_PROMPT}]
     if client.memory_mode[user_id] or client.saved_chats[user_id]:
         history += client.saved_chats[user_id]
@@ -140,7 +136,7 @@ async def on_message(message):
     try:
         reply = await fetch_openrouter_reply(client.models[user_id], history)
     except Exception as e:
-        await message.reply(ping + f"❌ Error: {e}")
+        await message.reply(ping + f"❌ {e}")
         return
 
     if client.memory_mode[user_id] or client.saved_chats[user_id] is not None:
