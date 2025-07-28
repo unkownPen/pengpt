@@ -4,6 +4,8 @@ import guilded
 import aiohttp
 from aiohttp import web
 import re
+import traceback
+import json
 
 # Config
 GUILDED_TOKEN      = os.getenv("GUILDED_TOKEN")
@@ -56,14 +58,24 @@ async def get_ai_response(prompt):
         "max_tokens": 1024
     }
 
-    async with aiohttp.ClientSession() as session:
-        resp = await session.post(OPENROUTER_URL, headers=headers, json=payload)
-        data = await resp.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(OPENROUTER_URL, headers=headers, json=payload) as resp:
+                response_text = await resp.text()
+                if resp.status != 200:
+                    return f"❌ OpenRouter Error {resp.status}:\n```\n{response_text}\n```"
 
-        if "error" in data:
-            return f"❌ ERROR: {data['error'].get('message', 'unknown error')}"
+                try:
+                    data = json.loads(response_text)
+                    message = data.get("choices", [{}])[0].get("message", {}).get("content")
+                    if not message:
+                        return f"⚠️ Could not parse response:\n```json\n{json.dumps(data, indent=2)}\n```"
+                    return message
+                except Exception as e:
+                    return f"💥 JSON Decode Error:\n```{traceback.format_exc()}```\nRaw:\n```\n{response_text}\n```"
 
-        return data.get("choices", [{}])[0].get("message", {}).get("content")
+    except Exception as e:
+        return f"🔥 Fatal Error:\n```{traceback.format_exc()}```"
 
 @bot.event
 async def on_ready():
@@ -173,3 +185,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
