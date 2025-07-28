@@ -85,11 +85,9 @@ async def get_ai_response(prompt):
 @bot.event
 async def on_message(msg):
     global toggle_ping_only, current_chat, saved_chats
-    print(f"DEBUG on_message called. current_chat={current_chat}, saved_chats keys={list(saved_chats.keys())}")
-    if msg.author.id == bot.user.id:
-        return
-    content = msg.content.strip()(msg):
-    global toggle_ping_only, current_chat
+    # Debug log
+    print(f"DEBUG on_message. current_chat={current_chat}, saved_chats={list(saved_chats.keys())}")
+
     if msg.author.id == bot.user.id:
         return
     content = msg.content.strip()
@@ -104,7 +102,7 @@ async def on_message(msg):
             "`/de`      - Reset ping mode and clear all chats.\n"
             "`/sc`      - Start new saved chat (max 5).\n"
             "`/sco`     - Close current saved chat.\n"
-            "`/sc1`…`/sc5` - Switch to saved chat slot.\n"
+            "`/sc1-5`   - Switch to saved chat slot.\n"
             "`/vsc`     - List saved chats + counts.\n"
             "`/csc`     - Clear all saved chats.\n"
             "`/history` - Show current chat history."
