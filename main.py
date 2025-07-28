@@ -5,7 +5,7 @@ import aiohttp
 from aiohttp import web
 import re
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 import traceback
 import json
 
@@ -15,8 +15,8 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
 MAX_SAVED_CHATS    = 5
 
-# Timezone for UAE
-UAE_TZ = pytz.timezone("Asia/Dubai")
+# Timezone for UAE using stdlib
+UAE_TZ = ZoneInfo("Asia/Dubai")
 
 bot = guilded.Client()
 
@@ -100,7 +100,7 @@ async def on_message(msg):
             "`/help`    - Show this message.\n"
             "`/pa`      - Require @ mention to respond.\n"
             "`/pd`      - Respond to all messages.\n"
-            "`/de`      - Reset ping mode and clear chats.\n"
+            "`/de`      - Reset ping mode and clear all chats.\n"
             "`/sc`      - Start new saved chat (max 5).\n"
             "`/sco`     - Close current saved chat.\n"
             "`/sc1`…`/sc5` - Switch to saved chat slot.\n"
@@ -209,3 +209,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
