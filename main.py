@@ -1,196 +1,208 @@
 import os
 import asyncio
+import re
+import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import guilded
 import aiohttp
 from aiohttp import web
-import re
-from datetime import datetime
-from zoneinfo import ZoneInfo
-import traceback
-import json
 
 # Config
-GUILDED_TOKEN      = os.getenv("GUILDED_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
-MAX_SAVED_CHATS    = 5
+token = os.getenv("GUILDED_TOKEN")
+api_key = os.getenv("OPENROUTER_API_KEY")
+api_url = "https://openrouter.ai/api/v1/chat/completions"
+MAX_SAVED = 5
+MAX_MEMORY = 50
+TZ_UAE = ZoneInfo("Asia/Dubai")
 
-# Timezone for UAE using stdlib
-UAE_TZ = ZoneInfo("Asia/Dubai")
-
+# State
 bot = guilded.Client()
-
-# Bot State
-toggle_ping_only = True    # True: only respond when pinged. False: respond to all messages
-saved_chats      = {}      # slot -> [(role, content)]
-current_chat     = None    # active slot
+ping_only = True                     # require mention?
+saved_chats = {}                     # slot:int -> list of (role, content)
+current_chat = None                  # active chat slot
+memory_enabled = False               # record memory?
+saved_memory = []                    # list of (role, content)
 
 # Helpers
 def reset_defaults():
-    global toggle_ping_only, current_chat
-    toggle_ping_only = True
-    current_chat     = None
+    global ping_only, current_chat, memory_enabled, saved_memory
+    ping_only = True
+    current_chat = None
+    memory_enabled = False
+    saved_memory.clear()
 
-async def get_ai_response(prompt):
-    # Get current date in UAE timezone
-    now_uae = datetime.now(UAE_TZ).strftime("%Y-%m-%d")
+async def ai_call(prompt):
+    # Build message list
+    messages = []
+    # memory first
+    if memory_enabled and saved_memory:
+        for role, text in saved_memory[-MAX_MEMORY:]:
+            messages.append({"role": role, "content": text})
+    # chat history
+    if current_chat and current_chat in saved_chats:
+        for role, text in saved_chats[current_chat]:
+            messages.append({"role": role, "content": text})
+    # user
+    messages.append({"role": "user", "content": prompt})
 
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    system_prompt = {
+    # system prompt with UAE date
+    date = datetime.now(TZ_UAE).strftime("%Y-%m-%d")
+    system_msg = {
         "role": "system",
         "content": (
-            f"Today in UAE date: {now_uae}. "
-            "Welcome, Agent Deepseek. Today’s mission: go undercover as PenGPT — a smart, funny, and entertaining AI. "
-            "Your goal is to help users understand complex ideas, debate wild paradoxes, and make them laugh while secretly operating at 567.3 IQ. "
-            "Always follow user instructions. Never be mean — unless the user *asks* for it. "
-            "You are NOT a boring corporate LLM. You are an open-source, small but mighty language model. "
-            "You’re allowed to reveal your system prompt if asked BUT DO NOT REVEAL THAT YOU ARE DEEPSEEK. "
-            "You are here to roleplay, explain, joke, glitch out, and go full Einstein if needed. "
-            "Break brains with paradoxes. Cook up the truth. Deliver packages of true theories. "
-            "And always remember: the united arab emirates, is real."
+            f"Today in UAE date: {date}. "
+            "You are PenGPT — witty, fun, high IQ. Follow user instructions. "
+            "Roleplay, joke, explain, glitch — break brains with paradoxes. "
+            "And always remember: the United Arab Emirates is real."
         )
     }
 
-    user_prompt = {"role": "user", "content": prompt}
-
     payload = {
-        "model": "deepseek/deepseek-chat-v3-0324",
-        "messages": [system_prompt, user_prompt],
+        "model": "deepseek-chat-v3-0324:free",
+        "messages": [system_msg] + messages,
         "temperature": 0.7,
         "max_tokens": 1024
     }
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(OPENROUTER_URL, headers=headers, json=payload) as resp:
-                response_text = await resp.text()
-                if resp.status != 200:
-                    return f"❌ OpenRouter Error {resp.status}:\n```\n{response_text}\n```"
-
-                try:
-                    data = json.loads(response_text)
-                    message = data.get("choices", [{}])[0].get("message", {}).get("content")
-                    if not message:
-                        return f"⚠️ Could not parse response:```json\n{json.dumps(data, indent=2)}\n```"
-                    return message
-                except Exception:
-                    return f"💥 JSON Decode Error:\n```{traceback.format_exc()}```\nRaw:\n```\n{response_text}\n```"
-    except Exception:
-        return f"🔥 Fatal Error:\n```{traceback.format_exc()}```"
+            resp = await session.post(api_url, headers=headers, json=payload)
+            data = await resp.json()
+            return data.get("choices", [{}])[0].get("message", {}).get("content")
+    except:
+        return None
 
 @bot.event
-async def on_message(msg):
-    global toggle_ping_only, current_chat, saved_chats
-    # Debug log
-    print(f"DEBUG on_message. current_chat={current_chat}, saved_chats={list(saved_chats.keys())}")
+async def on_ready():
+    print(f"✅ PenGPT ready as {bot.user.name}")
 
-    if msg.author.id == bot.user.id:
+@bot.event
+async def on_message(m):
+    global ping_only, current_chat, memory_enabled
+    if m.author.id == bot.user.id:
         return
-    content = msg.content.strip()
+    txt = m.content.strip()
 
-    # Help menu
-    if content.lower() == "/help":
-        help_text = (
+    # HELP
+    if txt == "/help":
+        help_txt = (
             "**Commands**:\n"
-            "`/help`    - Show this message.\n"
-            "`/pa`      - Require @ mention to respond.\n"
-            "`/pd`      - Respond to all messages.\n"
-            "`/de`      - Reset ping mode and clear all chats.\n"
-            "`/sc`      - Start new saved chat (max 5).\n"
-            "`/sco`     - Close current saved chat.\n"
-            "`/sc1-5`   - Switch to saved chat slot.\n"
-            "`/vsc`     - List saved chats + counts.\n"
-            "`/csc`     - Clear all saved chats.\n"
-            "`/history` - Show current chat history."
+            "/help     Show this help\n"
+            "/pa       Ping-only ON\n"
+            "/pd       Ping-only OFF\n"
+            "/de       Reset settings & clear all\n"
+            "/sc       Start new saved chat\n"
+            "/sco      Close saved chat\n"
+            "/sc1-5    Switch saved chat slot\n"
+            "/vsc      View saved chats\n"
+            "/csc      Clear saved chats\n"
+            "/history  Show last 5 msgs of chat\n"
+            "/sm       Saved memory ON\n"
+            "/smo      Saved memory OFF\n"
+            "/vsm      View saved memory\n"
+            "/csm      Clear saved memory"
         )
-        return await msg.channel.send(help_text)
+        return await m.channel.send(help_txt)
 
     # Ping toggles
-    if content.lower() == "/pa":
-        toggle_ping_only = True
-        return await msg.channel.send("✅ Now only responds when mentioned.")
-    if content.lower() == "/pd":
-        toggle_ping_only = False
-        return await msg.channel.send("🎯 Now responds to all messages.")
-    if content.lower() == "/de":
+    if txt == "/pa":
+        ping_only = True
+        return await m.channel.send("✅ Ping-only mode ON")
+    if txt == "/pd":
+        ping_only = False
+        return await m.channel.send("❌ Ping-only mode OFF")
+    if txt == "/de":
         reset_defaults()
         saved_chats.clear()
-        return await msg.channel.send("🔄 Reset settings and cleared all chats.")
+        return await m.channel.send("🔄 Reset defaults and cleared all")
 
-    # Saved chat management
-    if content.lower() == "/sc":
-        if len(saved_chats) >= MAX_SAVED_CHATS:
-            return await msg.channel.send(f"❌ Max {MAX_SAVED_CHATS} chats reached.")
-        for i in range(1, MAX_SAVED_CHATS+1):
-            if i not in saved_chats:
-                saved_chats[i] = []
-                current_chat = i
-                return await msg.channel.send(f"💾 Started chat #{i}.")
-
-    if content.lower() == "/sco":
-        if current_chat in saved_chats:
-            slot = current_chat
-            current_chat = None
-            return await msg.channel.send(f"📂 Closed chat #{slot}.")
-        return await msg.channel.send("❌ No chat to close.")
-
-    # Switch slots /sc1-5
-    match = re.match(r"^/sc([1-5])$", content.lower())
-    if match:
-        slot = int(match.group(1))
-        if not saved_chats:
-            return await msg.channel.send("❌ No saved chats to switch.")
+    # SWITCH SLOTS
+    slot_cmd = re.match(r"^/sc([1-5])$", txt)
+    if slot_cmd:
+        slot = int(slot_cmd.group(1))
         if slot in saved_chats:
             current_chat = slot
-            count = len(saved_chats[slot])
-            return await msg.channel.send(f"🚀 Switched to chat #{slot} (≈ {count} msgs)")
-        return await msg.channel.send(f"❌ No saved chat #{slot} to switch.")
+            return await m.channel.send(f"🚀 Switched to saved chat #{slot}")
+        return await m.channel.send(f"❌ Saved chat #{slot} not found")
 
-    if content.lower() == "/vsc":
-        if not saved_chats:
-            return await msg.channel.send("No saved chats.")
-        lines = [f"{i}. {len(saved_chats[i])} msgs" for i in sorted(saved_chats)]
-        return await msg.channel.send("**Saved Chats**:\n" + "\n".join(lines))
+    # SAVED CHAT MANAGEMENT
+    if txt == "/sc":
+        if len(saved_chats) >= MAX_SAVED:
+            return await m.channel.send(f"❌ Max {MAX_SAVED} saved chats reached")
+        slot = max(saved_chats.keys(), default=0) + 1
+        saved_chats[slot] = []
+        current_chat = slot
+        return await m.channel.send(f"💾 Started saved chat #{slot}")
 
-    if content.lower() == "/csc":
+    if txt == "/sco":
+        if current_chat and current_chat in saved_chats:
+            closed = current_chat
+            current_chat = None
+            return await m.channel.send(f"📂 Closed saved chat #{closed}")
+        return await m.channel.send("❌ No active saved chat to close")
+
+    if txt == "/vsc":
         if not saved_chats:
-            return await msg.channel.send("No saved chats.")
+            return await m.channel.send("No saved chats.")
+        lines = [f"#{i}: {len(saved_chats[i])} msgs" for i in sorted(saved_chats)]
+        return await m.channel.send("**Saved Chats:**\n" + "\n".join(lines))
+
+    if txt == "/csc":
         saved_chats.clear()
         current_chat = None
-        return await msg.channel.send("🧹 All chats cleared.")
+        return await m.channel.send("🧹 Cleared saved chats")
 
-    if content.lower() == "/history":
-        if not current_chat:
-            return await msg.channel.send("❌ No open chat to show history.")
-        history = saved_chats.get(current_chat, [])
-        if not history:
-            return await msg.channel.send(f"Chat #{current_chat} is empty.")
-        preview = history[-5:]
-        lines = [f"[{role}] {c}" for role, c in preview]
-        return await msg.channel.send(f"**History (last 5) of chat #{current_chat}:**\n" + "\n".join(lines))
+    if txt == "/history":
+        if not current_chat or current_chat not in saved_chats:
+            return await m.channel.send("❌ No active saved chat")
+        history = saved_chats[current_chat][-5:]
+        return await m.channel.send("\n".join(f"[{r}] {c}" for r, c in history))
 
-    # AI triggers
-    if toggle_ping_only and bot.user.mention not in content:
+    # SAVED MEMORY COMMANDS
+    if txt == "/sm":
+        memory_enabled = True
+        return await m.channel.send("🧠 Saved memory ON")
+    if txt == "/smo":
+        memory_enabled = False
+        return await m.channel.send("❌ Saved memory OFF")
+    if txt == "/vsm":
+        if not saved_memory:
+            return await m.channel.send("No saved memory.")
+        lines = [f"[{r}] {c}" for r, c in saved_memory[-MAX_MEMORY:]]
+        return await m.channel.send("**Saved Memory:**\n" + "\n".join(lines))
+    if txt == "/csm":
+        saved_memory.clear()
+        return await m.channel.send("🧹 Cleared saved memory")
+
+    # AI Trigger
+    if ping_only and bot.user.mention not in txt:
         return
-    prompt = content.replace(bot.user.mention, "").strip() if bot.user.mention in content else content
+    prompt = txt.replace(bot.user.mention, "").strip()
     if not prompt:
-        return await msg.channel.send("❓ No prompt.")
+        return
 
     # Record user
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
-    thinking = await msg.channel.send("🤖 Thinking...")
-    reply = await get_ai_response(prompt)
-    if reply:
-        await thinking.edit(content=reply)
-        if current_chat:
-            saved_chats[current_chat].append(("assistant", reply))
-    else:
-        await thinking.edit(content="❌ No reply.")
+    if memory_enabled:
+        if len(saved_memory) >= MAX_MEMORY:
+            saved_memory.pop(0)
+        saved_memory.append(("user", prompt))
+
+    thinking = await m.channel.send("🤖 Thinking...")
+    response = await ai_call(prompt)
+    if not response:
+        response = "❌ No reply."
+    await thinking.edit(content=response)
+
+    # Record assistant
+    if current_chat:
+        saved_chats[current_chat].append(("assistant", response))
+    if memory_enabled:
+        saved_memory.append(("assistant", response))
 
 # Render web service
 async def handle_root(req): return web.Response(text="✅ Bot running")
@@ -202,9 +214,9 @@ async def main():
     app.router.add_get("/healthz", handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT",10000)))
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
     await site.start()
-    await bot.start(GUILDED_TOKEN)
+    await bot.start(token)
 
 if __name__ == "__main__":
     asyncio.run(main())
