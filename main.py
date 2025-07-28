@@ -83,11 +83,12 @@ async def get_ai_response(prompt):
         return f"🔥 Fatal Error:\n```{traceback.format_exc()}```"
 
 @bot.event
-async def on_ready():
-    print(f"✅ Logged in as {bot.user.name}")
-
-@bot.event
 async def on_message(msg):
+    global toggle_ping_only, current_chat, saved_chats
+    print(f"DEBUG on_message called. current_chat={current_chat}, saved_chats keys={list(saved_chats.keys())}")
+    if msg.author.id == bot.user.id:
+        return
+    content = msg.content.strip()(msg):
     global toggle_ping_only, current_chat
     if msg.author.id == bot.user.id:
         return
