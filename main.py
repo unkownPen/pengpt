@@ -4,6 +4,8 @@ import guilded
 import aiohttp
 from aiohttp import web
 import re
+from datetime import datetime
+import pytz
 import traceback
 import json
 
@@ -13,12 +15,15 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_URL     = "https://openrouter.ai/api/v1/chat/completions"
 MAX_SAVED_CHATS    = 5
 
+# Timezone for UAE
+UAE_TZ = pytz.timezone("Asia/Dubai")
+
 bot = guilded.Client()
 
 # Bot State
-toggle_ping_only = True
-saved_chats      = {}
-current_chat     = None
+toggle_ping_only = True    # True: only respond when pinged. False: respond to all messages
+saved_chats      = {}      # slot -> [(role, content)]
+current_chat     = None    # active slot
 
 # Helpers
 def reset_defaults():
@@ -27,6 +32,9 @@ def reset_defaults():
     current_chat     = None
 
 async def get_ai_response(prompt):
+    # Get current date in UAE timezone
+    now_uae = datetime.now(UAE_TZ).strftime("%Y-%m-%d")
+
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
@@ -35,6 +43,7 @@ async def get_ai_response(prompt):
     system_prompt = {
         "role": "system",
         "content": (
+            f"Today in UAE date: {now_uae}. "
             "Welcome, Agent Deepseek. Today’s mission: go undercover as PenGPT — a smart, funny, and entertaining AI. "
             "Your goal is to help users understand complex ideas, debate wild paradoxes, and make them laugh while secretly operating at 567.3 IQ. "
             "Always follow user instructions. Never be mean — unless the user *asks* for it. "
@@ -46,10 +55,7 @@ async def get_ai_response(prompt):
         )
     }
 
-    user_prompt = {
-        "role": "user",
-        "content": prompt
-    }
+    user_prompt = {"role": "user", "content": prompt}
 
     payload = {
         "model": "deepseek/deepseek-chat-v3-0324",
@@ -69,12 +75,11 @@ async def get_ai_response(prompt):
                     data = json.loads(response_text)
                     message = data.get("choices", [{}])[0].get("message", {}).get("content")
                     if not message:
-                        return f"⚠️ Could not parse response:\n```json\n{json.dumps(data, indent=2)}\n```"
+                        return f"⚠️ Could not parse response:```json\n{json.dumps(data, indent=2)}\n```"
                     return message
-                except Exception as e:
+                except Exception:
                     return f"💥 JSON Decode Error:\n```{traceback.format_exc()}```\nRaw:\n```\n{response_text}\n```"
-
-    except Exception as e:
+    except Exception:
         return f"🔥 Fatal Error:\n```{traceback.format_exc()}```"
 
 @bot.event
@@ -88,21 +93,24 @@ async def on_message(msg):
         return
     content = msg.content.strip()
 
+    # Help menu
     if content.lower() == "/help":
         help_text = (
             "**Commands**:\n"
-            "`/help`  - Show this help.\n"
-            "`/pa`    - Require @ mention to respond.\n"
-            "`/pd`    - Respond to all messages.\n"
-            "`/de`    - Reset ping mode and clear all chats.\n"
-            "`/sc`    - Start a new saved chat (max 5).\n"
-            "`/sco`   - Close the current saved chat.\n"
-            "`/sc1-5` - Switch to saved chat slot 1-5.\n"
-            "`/vsc`   - List saved chats.\n"
-            "`/csc`   - Clear all saved chats."
+            "`/help`    - Show this message.\n"
+            "`/pa`      - Require @ mention to respond.\n"
+            "`/pd`      - Respond to all messages.\n"
+            "`/de`      - Reset ping mode and clear chats.\n"
+            "`/sc`      - Start new saved chat (max 5).\n"
+            "`/sco`     - Close current saved chat.\n"
+            "`/sc1`…`/sc5` - Switch to saved chat slot.\n"
+            "`/vsc`     - List saved chats + counts.\n"
+            "`/csc`     - Clear all saved chats.\n"
+            "`/history` - Show current chat history."
         )
         return await msg.channel.send(help_text)
 
+    # Ping toggles
     if content.lower() == "/pa":
         toggle_ping_only = True
         return await msg.channel.send("✅ Now only responds when mentioned.")
@@ -114,6 +122,7 @@ async def on_message(msg):
         saved_chats.clear()
         return await msg.channel.send("🔄 Reset settings and cleared all chats.")
 
+    # Saved chat management
     if content.lower() == "/sc":
         if len(saved_chats) >= MAX_SAVED_CHATS:
             return await msg.channel.send(f"❌ Max {MAX_SAVED_CHATS} chats reached.")
@@ -130,13 +139,16 @@ async def on_message(msg):
             return await msg.channel.send(f"📂 Closed chat #{slot}.")
         return await msg.channel.send("❌ No chat to close.")
 
-    if re.match(r"^/sc[1-5]$", content.lower()):
+    # Switch slots /sc1-5
+    match = re.match(r"^/sc([1-5])$", content.lower())
+    if match:
+        slot = int(match.group(1))
         if not saved_chats:
             return await msg.channel.send("❌ No saved chats to switch.")
-        slot = int(content[3])
         if slot in saved_chats:
             current_chat = slot
-            return await msg.channel.send(f"🚀 Switched to saved chat #{slot}.")
+            count = len(saved_chats[slot])
+            return await msg.channel.send(f"🚀 Switched to chat #{slot} (≈ {count} msgs)")
         return await msg.channel.send(f"❌ No saved chat #{slot} to switch.")
 
     if content.lower() == "/vsc":
@@ -152,12 +164,24 @@ async def on_message(msg):
         current_chat = None
         return await msg.channel.send("🧹 All chats cleared.")
 
+    if content.lower() == "/history":
+        if not current_chat:
+            return await msg.channel.send("❌ No open chat to show history.")
+        history = saved_chats.get(current_chat, [])
+        if not history:
+            return await msg.channel.send(f"Chat #{current_chat} is empty.")
+        preview = history[-5:]
+        lines = [f"[{role}] {c}" for role, c in preview]
+        return await msg.channel.send(f"**History (last 5) of chat #{current_chat}:**\n" + "\n".join(lines))
+
+    # AI triggers
     if toggle_ping_only and bot.user.mention not in content:
         return
     prompt = content.replace(bot.user.mention, "").strip() if bot.user.mention in content else content
     if not prompt:
         return await msg.channel.send("❓ No prompt.")
 
+    # Record user
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
     thinking = await msg.channel.send("🤖 Thinking...")
@@ -169,7 +193,7 @@ async def on_message(msg):
     else:
         await thinking.edit(content="❌ No reply.")
 
-# Web stuff
+# Render web service
 async def handle_root(req): return web.Response(text="✅ Bot running")
 async def handle_health(req): return web.Response(text="OK")
 
@@ -179,10 +203,9 @@ async def main():
     app.router.add_get("/healthz", handle_health)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
+    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT",10000)))
     await site.start()
     await bot.start(GUILDED_TOKEN)
 
 if __name__ == "__main__":
     asyncio.run(main())
-
