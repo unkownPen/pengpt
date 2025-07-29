@@ -30,8 +30,8 @@ current_llm = "deepseek/deepseek-chat-v3-0324:free"
 
 # Allowed LLMs
 allowed_llms = {
-    "deepseek r1": "tngtech/deepseek-r1t2-chimera:free",
-    "deepseek v3": "deepseek/deepseek-chat-v3-0324:free",
+    "deepseek-r1": "tngtech/deepseek-r1t2-chimera:free",
+    "deepseek-v3": "deepseek/deepseek-chat-v3-0324:free",
     "llama3": "meta-llama/llama-3.3-70b-instruct:free",
     "mistral": "mistralai/mistral-nemo:free"
 }
