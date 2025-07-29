@@ -101,7 +101,7 @@ async def on_message(m):
             "/help     Show this help\n"
             "/pa       Ping-only ON\n"
             "/pd       Ping-only OFF\n"
-            "/de       Reset settings & clear all\n"
+            "~~/de       Reset settings & clear all~~\n"
             "/sc       Start new saved chat\n"
             "/sco      Close saved chat\n"
             "/sc1-5    Switch saved chat slot\n"
@@ -122,9 +122,6 @@ async def on_message(m):
     if txt == "/pd":
         ping_only = False
         return await m.channel.send("❌ Ping-only mode OFF.")
-    if txt == "/de":
-        reset_defaults()
-        return await m.channel.send("🔄 Reset to the default settings (DOES NOT REMOVE SAVED CHATS.")
 
     # SWITCH SLOTS
     slot_cmd = re.match(r"^/sc([1-5])$", txt)
