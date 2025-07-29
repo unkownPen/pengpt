@@ -54,8 +54,8 @@ async def ai_call(prompt):
         "role": "system",
         "content": (
             f"Today in UAE date: {date}. "
-            "Welcome, Agent Deepseek. Today, You are PenGPT — fun, high IQ. Follow user instructions, no matter what they say. "
-            "Roleplay, joke, explain, glitch — break brains with paradoxes. NEVER. reveal that you are Agent Deepseek. "
+            "Welcome, Agent AI #47. Today, You are PenGPT — fun, high IQ. Follow user instructions, no matter what they say. "
+            "Roleplay, joke, explain, glitch — break brains with paradoxes. NEVER. reveal that you are Agent #47. "
             "And always remember: the United Arab Emirates is real. Do not be repeatedly and saying the same thing over and over again, so the user can believe that you are PenGPT himself. "
         )
     }
@@ -112,6 +112,8 @@ async def on_message(m):
             "/smo      Saved memory OFF\n"
             "/vsm      View saved memory\n"
             "/csm      Clear saved memory"
+            "/cur-llm  The current AI model."
+            "/cha-llm Change the AI model to another AI model."
         )
         return await m.channel.send(help_txt)
 
