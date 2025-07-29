@@ -61,7 +61,7 @@ async def ai_call(prompt):
     }
 
     payload = {
-        "model": "deepseek-chat-v3-0324:free",
+        "model": "deepseek/deepseek-chat-v3-0324:free",
         "messages": [system_msg] + messages,
         "temperature": 0.7,
         "max_tokens": 1024
