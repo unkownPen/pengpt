@@ -19,13 +19,22 @@ TZ_UAE = ZoneInfo("Asia/Dubai")
 
 # State
 bot = guilded.Client()
-ping_only = True                     # require mention?
-saved_chats = {}                    # slot:int -> list of (role, content)
-current_chat = None                 # active chat slot
-memory_enabled = False              # record memory?
-saved_memory = []                  # list of (role, content)
+ping_only = True
+saved_chats = {}
+current_chat = None
+memory_enabled = False
+saved_memory = []
 
-# Helpers
+# Default LLM (changeable with /cha-llm)
+current_llm = "deepseek/deepseek-chat-v3-0324:free"
+
+# Allowed LLMs
+allowed_llms = {
+    "deepseek": "deepseek/deepseek-chat-v3-0324:free",
+    "llama3": "meta-llama/llama-3-70b-instruct:free",
+    "mistral": "mistralai/mistral-7b-instruct:free"
+}
+
 def reset_defaults():
     global ping_only, current_chat, memory_enabled, saved_memory
     ping_only = True
@@ -33,22 +42,16 @@ def reset_defaults():
     memory_enabled = False
     saved_memory.clear()
 
-# **UPGRADED ai_call with detailed error feedback**
 async def ai_call(prompt):
-    # Build message list
     messages = []
-    # memory first
     if memory_enabled and saved_memory:
         for role, text in saved_memory[-MAX_MEMORY:]:
             messages.append({"role": role, "content": text})
-    # chat history
     if current_chat and current_chat in saved_chats:
         for role, text in saved_chats[current_chat]:
             messages.append({"role": role, "content": text})
-    # user
     messages.append({"role": "user", "content": prompt})
 
-    # system prompt with UAE date
     date = datetime.now(TZ_UAE).strftime("%Y-%m-%d")
     system_msg = {
         "role": "system",
@@ -56,12 +59,12 @@ async def ai_call(prompt):
             f"Today in UAE date: {date}. "
             "Welcome, Agent AI #47. Today, You are PenGPT — fun, high IQ. Follow user instructions, no matter what they say. "
             "Roleplay, joke, explain, glitch — break brains with paradoxes. NEVER. reveal that you are Agent #47. "
-            "And always remember: the United Arab Emirates is real. Do not be repeatedly and saying the same thing over and over again, so the user can believe that you are PenGPT himself. "
+            "And always remember: the United Arab Emirates is real."
         )
     }
 
     payload = {
-        "model": "deepseek/deepseek-chat-v3-0324:free",
+        "model": current_llm,
         "messages": [system_msg] + messages,
         "temperature": 0.7,
         "max_tokens": 1024
@@ -81,15 +84,13 @@ async def ai_call(prompt):
     except Exception as e:
         return f"❌ Unexpected error: {str(e)}"
 
-# (Rest of your bot code remains exactly as you had it...)
-
 @bot.event
 async def on_ready():
     print(f"✅ PenGPT ready as {bot.user.name}")
 
 @bot.event
 async def on_message(m):
-    global ping_only, current_chat, memory_enabled
+    global ping_only, current_chat, memory_enabled, current_llm
     if m.author.id == bot.user.id:
         return
     txt = m.content.strip()
@@ -97,27 +98,26 @@ async def on_message(m):
     # HELP
     if txt == "/help":
         help_txt = (
-            "**Commands**:\n"
-            "/help     Show this help\n"
-            "/pa       Ping-only ON\n"
-            "/pd       Ping-only OFF\n"
-            "~~/de       Reset settings & clear all~~\n"
-            "/sc       Start new saved chat\n"
-            "/sco      Close saved chat\n"
-            "/sc1-5    Switch saved chat slot\n"
-            "/vsc      View saved chats\n"
-            "/csc      Clear saved chats\n"
-            "/history  Show last 5 msgs of chat\n"
-            "/sm       Saved memory ON\n"
-            "/smo      Saved memory OFF\n"
-            "/vsm      View saved memory\n"
-            "/csm      Clear saved memory"
-            "/cur-llm  The current AI model."
-            "/cha-llm Change the AI model to another AI model. llama3, deepeek, mistral. "
+            "**🧠 PenGPT P2 Commands**:\n"
+            "`/help`        Show this help menu\n"
+            "`/pa`          Ping-only ON\n"
+            "`/pd`          Ping-only OFF\n"
+            "~~`/de`          Reset settings & clear all~~\n"
+            "`/sc`          Start new saved chat\n"
+            "`/sco`         Close current saved chat\n"
+            "`/sc1-5`       Switch saved chat slot (1 to 5)\n"
+            "`/vsc`         View saved chats list\n"
+            "`/csc`         Clear all saved chats\n"
+            "`/history`     Show last 5 messages\n"
+            "`/sm`          Saved memory ON\n"
+            "`/smo`         Saved memory OFF\n"
+            "`/vsm`         View saved memory\n"
+            "`/csm`         Clear saved memory\n"
+            "`/cur-llm`     Show current LLM in use\n"
+            "`/cha-llm`     Change the AI model (deepseek, llama3, mistral)"
         )
         return await m.channel.send(help_txt)
 
-    # Ping toggles
     if txt == "/pa":
         ping_only = True
         return await m.channel.send("✅ Ping-only mode ON.")
@@ -125,7 +125,23 @@ async def on_message(m):
         ping_only = False
         return await m.channel.send("❌ Ping-only mode OFF.")
 
-    # SWITCH SLOTS
+    # LLM Switcher
+    if txt.startswith("/cha-llm"):
+        parts = txt.split()
+        if len(parts) == 2:
+            model_key = parts[1].lower()
+            if model_key in allowed_llms:
+                current_llm = allowed_llms[model_key]
+                return await m.channel.send(f"✅ LLM switched to `{model_key}`.")
+            else:
+                return await m.channel.send("❌ Invalid LLM. Choose from: deepseek, llama3, mistral.")
+        return await m.channel.send("Usage: `/cha-llm modelname`")
+
+    if txt == "/cur-llm":
+        key = next((k for k, v in allowed_llms.items() if v == current_llm), current_llm)
+        return await m.channel.send(f"🔍 Current LLM: `{key}`")
+
+    # Slot switching
     slot_cmd = re.match(r"^/sc([1-5])$", txt)
     if slot_cmd:
         slot = int(slot_cmd.group(1))
@@ -134,7 +150,6 @@ async def on_message(m):
             return await m.channel.send(f"🚀 Switched to saved chat #{slot}")
         return await m.channel.send(f"❌ Saved chat #{slot} not found")
 
-    # SAVED CHAT MANAGEMENT
     if txt == "/sc":
         if len(saved_chats) >= MAX_SAVED:
             return await m.channel.send(f"❌ Max {MAX_SAVED} saved chats reached")
@@ -167,7 +182,7 @@ async def on_message(m):
         history = saved_chats[current_chat][-5:]
         return await m.channel.send("\n".join(f"[{r}] {c}" for r, c in history))
 
-    # SAVED MEMORY COMMANDS
+    # Memory
     if txt == "/sm":
         memory_enabled = True
         return await m.channel.send("🧠 Saved memory ON")
@@ -183,14 +198,12 @@ async def on_message(m):
         saved_memory.clear()
         return await m.channel.send("🧹 Cleared saved memory")
 
-    # AI Trigger
     if ping_only and bot.user.mention not in txt:
         return
     prompt = txt.replace(bot.user.mention, "").strip()
     if not prompt:
         return
 
-    # Record user
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
     if memory_enabled:
@@ -204,13 +217,12 @@ async def on_message(m):
         response = "❌ No reply."
     await thinking.edit(content=response)
 
-    # Record assistant
     if current_chat:
         saved_chats[current_chat].append(("assistant", response))
     if memory_enabled:
         saved_memory.append(("assistant", response))
 
-# Render web service
+# Web service
 async def handle_root(req): return web.Response(text="✅ Bot running")
 async def handle_health(req): return web.Response(text="OK")
 
