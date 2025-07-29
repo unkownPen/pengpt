@@ -113,7 +113,7 @@ async def on_message(m):
             "/vsm      View saved memory\n"
             "/csm      Clear saved memory"
             "/cur-llm  The current AI model."
-            "/cha-llm Change the AI model to another AI model."
+            "/cha-llm Change the AI model to another AI model. llama3, deepeek, mistral. "
         )
         return await m.channel.send(help_txt)
 
