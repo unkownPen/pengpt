@@ -124,7 +124,7 @@ async def on_message(m):
         return await m.channel.send("❌ Ping-only mode OFF.")
     if txt == "/de":
         reset_defaults()
-        return await m.channel.send("🔄 Reset to the default settings.")
+        return await m.channel.send("🔄 Reset to the default settings (DOES NOT REMOVE SAVED CHATS.")
 
     # SWITCH SLOTS
     slot_cmd = re.match(r"^/sc([1-5])$", txt)
