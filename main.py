@@ -30,9 +30,10 @@ current_llm = "deepseek/deepseek-chat-v3-0324:free"
 
 # Allowed LLMs
 allowed_llms = {
-    "deepseek": "deepseek/deepseek-chat-v3-0324:free",
-    "llama3": "meta-llama/llama-3-70b-instruct:free",
-    "mistral": "mistralai/mistral-7b-instruct:free"
+    "deepseek r1": "tngtech/deepseek-r1t2-chimera:free",
+    "deepseek v3": "deepseek/deepseek-chat-v3-0324:free",
+    "llama3": "meta-llama/llama-3.3-70b-instruct:free",
+    "mistral": "mistralai/mistral-nemo:free"
 }
 
 def reset_defaults():
@@ -114,7 +115,7 @@ async def on_message(m):
             "`/vsm`         View saved memory\n"
             "`/csm`         Clear saved memory\n"
             "`/cur-llm`     Show current LLM in use\n"
-            "`/cha-llm`     Change the AI model (deepseek, llama3, mistral)"
+            "`/cha-llm`     Change the AI model (deepseek r1, deepseek v3, llama3, mistral)"
         )
         return await m.channel.send(help_txt)
 
