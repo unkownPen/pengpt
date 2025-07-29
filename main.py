@@ -25,6 +25,10 @@ current_chat = None
 memory_enabled = False
 saved_memory = []
 
+# Cooldown system
+user_cooldowns = {}  # user_id -> last timestamp
+COOLDOWN_SECONDS = 5
+
 # Default LLM (changeable with /cha-llm)
 default_llm = "deepseek/deepseek-chat-v3-0324:free"
 current_llm = default_llm
