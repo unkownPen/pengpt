@@ -20,10 +20,10 @@ TZ_UAE = ZoneInfo("Asia/Dubai")
 # State
 bot = guilded.Client()
 ping_only = True                     # require mention?
-saved_chats = {}                     # slot:int -> list of (role, content)
-current_chat = None                  # active chat slot
-memory_enabled = False               # record memory?
-saved_memory = []                    # list of (role, content)
+saved_chats = {}                    # slot:int -> list of (role, content)
+current_chat = None                 # active chat slot
+memory_enabled = False              # record memory?
+saved_memory = []                  # list of (role, content)
 
 # Helpers
 def reset_defaults():
@@ -33,6 +33,7 @@ def reset_defaults():
     memory_enabled = False
     saved_memory.clear()
 
+# **UPGRADED ai_call with detailed error feedback**
 async def ai_call(prompt):
     # Build message list
     messages = []
@@ -70,10 +71,17 @@ async def ai_call(prompt):
     try:
         async with aiohttp.ClientSession() as session:
             resp = await session.post(api_url, headers=headers, json=payload)
+            if resp.status != 200:
+                error_text = await resp.text()
+                return f"❌ Error {resp.status}: {error_text}"
             data = await resp.json()
-            return data.get("choices", [{}])[0].get("message", {}).get("content")
-    except:
-        return None
+            return data.get("choices", [{}])[0].get("message", {}).get("content", "❌ No content returned.")
+    except aiohttp.ClientError as e:
+        return f"❌ Request error: {str(e)}"
+    except Exception as e:
+        return f"❌ Unexpected error: {str(e)}"
+
+# (Rest of your bot code remains exactly as you had it...)
 
 @bot.event
 async def on_ready():
