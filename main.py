@@ -26,7 +26,8 @@ memory_enabled = False
 saved_memory = []
 
 # Default LLM (changeable with /cha-llm)
-current_llm = "deepseek/deepseek-chat-v3-0324:free"
+default_llm = "deepseek/deepseek-chat-v3-0324:free"
+current_llm = default_llm
 
 # Allowed LLMs
 allowed_llms = {
@@ -35,12 +36,13 @@ allowed_llms = {
     "mistral": "mistralai/mistral-nemo:free"
 }
 
+# Helper to reset to default flags (does NOT clear chats or memory)
 def reset_defaults():
     global ping_only, current_chat, memory_enabled, saved_memory
     ping_only = True
     current_chat = None
     memory_enabled = False
-    saved_memory.clear()
+    # saved_chats and saved_memory untouched here
 
 async def ai_call(prompt):
     messages = []
@@ -95,14 +97,14 @@ async def on_message(m):
         return
     txt = m.content.strip()
 
-    # HELP
+    # HELP MENU
     if txt == "/help":
         help_txt = (
             "**🧠 PenGPT P2 Commands**:\n"
             "`/help`        Show this help menu\n"
             "`/pa`          Ping-only ON\n"
             "`/pd`          Ping-only OFF\n"
-            "~~`/de`          Reset settings & clear all~~\n"
+            "`/ds`          Reset to default LLM + settings\n"
             "`/sc`          Start new saved chat\n"
             "`/sco`         Close current saved chat\n"
             "`/sc1-5`       Switch saved chat slot (1 to 5)\n"
@@ -114,10 +116,11 @@ async def on_message(m):
             "`/vsm`         View saved memory\n"
             "`/csm`         Clear saved memory\n"
             "`/cur-llm`     Show current LLM in use\n"
-            "`/cha-llm`     Change the AI model (deepseek r1, deepseek v3, llama3, mistral)"
+            "`/cha-llm`     Change the AI model (deepseek, llama3, mistral)"
         )
         return await m.channel.send(help_txt)
 
+    # PING MODE
     if txt == "/pa":
         ping_only = True
         return await m.channel.send("✅ Ping-only mode ON.")
@@ -125,7 +128,13 @@ async def on_message(m):
         ping_only = False
         return await m.channel.send("❌ Ping-only mode OFF.")
 
-    # LLM Switcher
+    # DEFAULT RESET (/ds)
+    if txt == "/ds":
+        reset_defaults()
+        current_llm = default_llm
+        return await m.channel.send("🔁 Defaults restored. LLM set to `deepseek`, ping-only ON, memory OFF.")
+
+    # LLM SWITCHER
     if txt.startswith("/cha-llm"):
         parts = txt.split()
         if len(parts) == 2:
@@ -137,11 +146,12 @@ async def on_message(m):
                 return await m.channel.send("❌ Invalid LLM. Choose from: deepseek, llama3, mistral.")
         return await m.channel.send("Usage: `/cha-llm modelname`")
 
+    # SHOW CURRENT LLM
     if txt == "/cur-llm":
         key = next((k for k, v in allowed_llms.items() if v == current_llm), current_llm)
         return await m.channel.send(f"🔍 Current LLM: `{key}`")
 
-    # Slot switching
+    # SAVED CHAT SLOTS
     slot_cmd = re.match(r"^/sc([1-5])$", txt)
     if slot_cmd:
         slot = int(slot_cmd.group(1))
@@ -182,7 +192,7 @@ async def on_message(m):
         history = saved_chats[current_chat][-5:]
         return await m.channel.send("\n".join(f"[{r}] {c}" for r, c in history))
 
-    # Memory
+    # MEMORY
     if txt == "/sm":
         memory_enabled = True
         return await m.channel.send("🧠 Saved memory ON")
@@ -198,12 +208,23 @@ async def on_message(m):
         saved_memory.clear()
         return await m.channel.send("🧹 Cleared saved memory")
 
+    # HIDDEN RESET (/re)
+    if txt == "/re":
+        # full nuke: reset settings + clear chats & memory
+        reset_defaults()
+        saved_chats.clear()
+        current_llm = default_llm
+        saved_memory.clear()
+        return await m.channel.send("💣 Everything reset. Memory, saved chats, and settings wiped clean.")
+
+    # IGNORE UNLESS MENTIONED OR PD OFF
     if ping_only and bot.user.mention not in txt:
         return
     prompt = txt.replace(bot.user.mention, "").strip()
     if not prompt:
         return
 
+    # RECORD USER INPUT
     if current_chat:
         saved_chats[current_chat].append(("user", prompt))
     if memory_enabled:
@@ -217,6 +238,7 @@ async def on_message(m):
         response = "❌ No reply."
     await thinking.edit(content=response)
 
+    # RECORD ASSISTANT OUTPUT
     if current_chat:
         saved_chats[current_chat].append(("assistant", response))
     if memory_enabled:
