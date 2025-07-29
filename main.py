@@ -93,9 +93,19 @@ async def on_ready():
 @bot.event
 async def on_message(m):
     global ping_only, current_chat, memory_enabled, current_llm
+
     if m.author.id == bot.user.id:
         return
+
+    # COOLDOWN CHECK 
+    now = datetime.now().timestamp()
+    last_used = user_cooldowns.get(m.author.id, 0)
+    if now - last_used < COOLDOWN_SECONDS:
+        return  # User still in cooldown, ignore
+    user_cooldowns[m.author.id] = now
+
     txt = m.content.strip()
+    # (rest of your code continues here like normal...)
 
     # HELP MENU
     if txt == "/help":
